@@ -1,0 +1,103 @@
+name: Bug report
+description: Something in VirtualSSD does not behave the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug.
+
+        **Never paste a bot token, a refresh token, a client secret, or a
+        recovery key.** If you do, rotate it immediately.
+
+        The **live engine log** on the Diagnostics page contains the real
+        backend events and no secrets — copying the relevant lines is the
+        single most useful thing you can attach.
+
+  - type: input
+    id: version
+    attributes:
+      label: VirtualSSD version
+      description: Shown in the sidebar footer, for example `1.0.0+1`.
+      placeholder: 1.0.0+1
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2 (22631)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options:
+        - Google Drive
+        - Telegram
+        - Local only (no provider)
+        - Not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: encryption
+    attributes:
+      label: Is the disk encrypted?
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: elevated
+    attributes:
+      label: Was the app running as administrator?
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you do?
+      description: Step by step, starting from launching the app.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Include the exact error text if there was one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant engine log lines
+      description: From the Diagnostics page. Please do not include secrets.
+      render: text
+
+  - type: textarea
+    id: manifest
+    attributes:
+      label: Manifest contents
+      description: >
+        Only if the disk is in a bad state. The contents of
+        `%LOCALAPPDATA%\VirtualSSD\disks\<disk-id>\manifest.json`.
+      render: json

@@ -1,0 +1,48 @@
+name: Feature request
+description: Suggest something VirtualSSD should be able to do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion.
+
+        If it is about the storage path — mirroring, restoring, speed, or
+        encryption — please read
+        [docs/performance-and-robustness.md](https://github.com/ahmad-abdullah-chaudary/virtualssd/blob/main/docs/performance-and-robustness.md)
+        first. It records what is implemented, what is measured, and what is
+        planned, so you can see whether your idea is already on the list.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation you are in, not the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like VirtualSSD to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried instead?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Where would this change?
+      options:
+        - Storage engine (mirroring, restoring, chunking)
+        - Provider adapter (Google Drive, Telegram, or a new one)
+        - Desktop application and UI
+        - Documentation
+        - Build, signing, or release pipeline
+        - Not sure
+    validations:
+      required: true
