@@ -78,11 +78,7 @@ impl CloudStorageProvider for RecordingProvider {
             let expected = self.barrier_size.load(Ordering::SeqCst).max(1) as usize;
             // The barrier is waited on with a timeout so a sequential
             // implementation fails the test instead of hanging it.
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                barrier.wait(),
-            )
-            .await;
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(10), barrier.wait()).await;
             let _ = expected;
         }
 
@@ -92,7 +88,9 @@ impl CloudStorageProvider for RecordingProvider {
             return Err(ProviderError::Network(message));
         }
 
-        checksum.verify(data).map_err(|e| ProviderError::IntegrityFailure(e.to_string()))?;
+        checksum
+            .verify(data)
+            .map_err(|e| ProviderError::IntegrityFailure(e.to_string()))?;
 
         let object_id = format!("obj-{namespace}-{chunk_index}");
         self.objects
@@ -271,7 +269,10 @@ async fn second_mirror_skips_unchanged_chunks() {
     assert_eq!(first.uploaded_chunks, 3);
 
     let second = engine.sync_vhdx_snapshot().await.unwrap();
-    assert_eq!(second.skipped_chunks, 3, "unchanged chunks must not be re-uploaded");
+    assert_eq!(
+        second.skipped_chunks, 3,
+        "unchanged chunks must not be re-uploaded"
+    );
     assert_eq!(second.uploaded_chunks, 0);
     assert_eq!(
         provider.uploads.load(Ordering::SeqCst),
@@ -289,7 +290,10 @@ async fn a_failed_upload_is_reported_and_not_reported_as_success() {
     *provider.fail_with.lock() = Some("network is down".to_string());
 
     let result = engine.sync_vhdx_snapshot().await;
-    assert!(result.is_err(), "a failed upload must not be reported as success");
+    assert!(
+        result.is_err(),
+        "a failed upload must not be reported as success"
+    );
     let error = result.unwrap_err().to_string();
     assert!(
         error.contains("network is down"),

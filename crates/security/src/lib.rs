@@ -150,7 +150,10 @@ pub fn unprotect_secret_dpapi(ciphertext: &[u8]) -> Result<Vec<u8>, SecurityErro
 }
 
 /// Validates path to prevent directory traversal outside the base directory
-pub fn sanitize_path(base_dir: &Path, user_supplied_subpath: &Path) -> Result<PathBuf, SecurityError> {
+pub fn sanitize_path(
+    base_dir: &Path,
+    user_supplied_subpath: &Path,
+) -> Result<PathBuf, SecurityError> {
     let combined = base_dir.join(user_supplied_subpath);
     // Disallow ".." components
     for component in user_supplied_subpath.components() {
@@ -174,7 +177,11 @@ pub fn redact_secrets(input: &str) -> String {
     let mut out = input.to_string();
     for (pat, replacement) in patterns {
         if let Some(idx) = out.find(pat) {
-            let end = out[idx..].find('&').or_else(|| out[idx..].find(' ')).map(|i| idx + i).unwrap_or(out.len());
+            let end = out[idx..]
+                .find('&')
+                .or_else(|| out[idx..].find(' '))
+                .map(|i| idx + i)
+                .unwrap_or(out.len());
             out.replace_range(idx..end, replacement);
         }
     }
@@ -201,6 +208,9 @@ mod tests {
         assert!(sanitize_path(base, safe).is_ok());
 
         let malicious = Path::new(r"..\..\Windows\System32\cmd.exe");
-        assert!(matches!(sanitize_path(base, malicious), Err(SecurityError::PathTraversal(_))));
+        assert!(matches!(
+            sanitize_path(base, malicious),
+            Err(SecurityError::PathTraversal(_))
+        ));
     }
 }

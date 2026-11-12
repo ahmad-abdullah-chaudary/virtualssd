@@ -9,6 +9,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use tauri::Manager;
 use uuid::Uuid;
 use virtualssd_block_map::DEFAULT_CHUNK_SIZE;
 use virtualssd_manifest::{DiskManifest, ProviderType};
@@ -19,7 +20,6 @@ use virtualssd_storage_core::windows_vhd;
 use virtualssd_storage_core::{
     DiskStatus, DiskTelemetry, MirrorReport, RemoteDeleteReport, VirtualDiskEngine,
 };
-use tauri::Manager;
 use windows::core::{w, PCWSTR};
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -168,10 +168,7 @@ fn load_provider_index(data_dir: &Path) -> Vec<PersistedProvider> {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
         Err(e) => {
-            tracing::warn!(
-                "Could not read provider index {}: {e}",
-                path.display()
-            );
+            tracing::warn!("Could not read provider index {}: {e}", path.display());
             return Vec::new();
         }
     };
@@ -180,10 +177,8 @@ fn load_provider_index(data_dir: &Path) -> Vec<PersistedProvider> {
         Ok(entries) => entries,
         Err(e) => {
             // Preserve the damaged file instead of silently overwriting it.
-            let backup = path.with_extension(format!(
-                "json.corrupt-{}",
-                chrono::Utc::now().timestamp()
-            ));
+            let backup =
+                path.with_extension(format!("json.corrupt-{}", chrono::Utc::now().timestamp()));
             let _ = std::fs::rename(&path, &backup);
             tracing::error!(
                 "Provider index {} is corrupt ({e}); preserved at {}",
@@ -236,13 +231,10 @@ fn persist_credential<T: Serialize>(
     write_atomic(&credential_path(data_dir, provider_id), &protected)
 }
 
-fn load_credential<T: DeserializeOwned>(
-    data_dir: &Path,
-    provider_id: &str,
-) -> Result<T, String> {
+fn load_credential<T: DeserializeOwned>(data_dir: &Path, provider_id: &str) -> Result<T, String> {
     let path = credential_path(data_dir, provider_id);
-    let protected = std::fs::read(&path)
-        .map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
+    let protected =
+        std::fs::read(&path).map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
     let mut plaintext = virtualssd_security::unprotect_secret_dpapi(&protected)
         .map_err(|e| format!("Windows DPAPI could not decrypt {}: {e}", path.display()))?;
 
@@ -338,11 +330,10 @@ fn restore_providers(
 
     for entry in load_provider_index(data_dir) {
         let restored = match entry.kind {
-            ProviderKind::GoogleDrive => load_credential::<PersistedGDriveSecret>(
-                data_dir,
-                &entry.id,
-            )
-            .and_then(|secret| build_google_provider(data_dir, &entry.id, secret)),
+            ProviderKind::GoogleDrive => {
+                load_credential::<PersistedGDriveSecret>(data_dir, &entry.id)
+                    .and_then(|secret| build_google_provider(data_dir, &entry.id, secret))
+            }
             ProviderKind::Telegram => {
                 load_credential::<PersistedTelegramSecret>(data_dir, &entry.id)
                     .and_then(|secret| build_telegram_provider(data_dir, &entry.id, secret))
@@ -481,7 +472,7 @@ fn validate_import_manifest(manifest: &DiskManifest) -> Result<(), String> {
                     manifest.geometry.total_capacity_bytes
                 ));
             }
-            let expected_chunks = (file_size + chunk_size - 1) / chunk_size;
+            let expected_chunks = file_size.div_ceil(chunk_size);
             for (&index, descriptor) in &manifest.vhdx_chunks {
                 if descriptor.chunk_index != index {
                     return Err(format!(
@@ -495,7 +486,8 @@ fn validate_import_manifest(manifest: &DiskManifest) -> Result<(), String> {
                     ));
                 }
                 let offset = index * chunk_size;
-                let expected_length = ((file_size - offset) as usize).min(manifest.geometry.chunk_size);
+                let expected_length =
+                    ((file_size - offset) as usize).min(manifest.geometry.chunk_size);
                 if descriptor.length != expected_length {
                     return Err(format!(
                         "VHDX chunk #{index} length {} does not match the snapshot length {expected_length}",
@@ -574,25 +566,26 @@ async fn add_google_drive_provider(
         GoogleDriveProvider::new(creds)
             .with_state_dir(gdrive_state_dir(&state.data_dir, &provider_id)),
     );
-    let (connected, error_message, total_quota, used_quota) = match provider.verify_connection().await {
-        Ok(_) => {
-            let (total, used) = match provider.get_quota().await {
-                Ok(q) => (q.total_bytes, q.used_bytes),
-                Err(e) => {
-                    tracing::warn!("Google Drive connected but quota is unavailable: {e}");
-                    (0u64, 0u64)
-                }
-            };
-            (true, None, total, used)
-        }
-        Err(e) => {
-            tracing::error!(
-                target: "virtualssd_desktop::providers",
-                "Google Drive verification failed: {e}"
-            );
-            return Err(format!("Google Drive verification failed: {e}"));
-        }
-    };
+    let (connected, error_message, total_quota, used_quota) =
+        match provider.verify_connection().await {
+            Ok(_) => {
+                let (total, used) = match provider.get_quota().await {
+                    Ok(q) => (q.total_bytes, q.used_bytes),
+                    Err(e) => {
+                        tracing::warn!("Google Drive connected but quota is unavailable: {e}");
+                        (0u64, 0u64)
+                    }
+                };
+                (true, None, total, used)
+            }
+            Err(e) => {
+                tracing::error!(
+                    target: "virtualssd_desktop::providers",
+                    "Google Drive verification failed: {e}"
+                );
+                return Err(format!("Google Drive verification failed: {e}"));
+            }
+        };
 
     // Store the refresh token with DPAPI only after the credential proved it
     // works. A persistence failure is reported instead of pretending the
@@ -622,7 +615,10 @@ async fn add_google_drive_provider(
         total_quota_bytes: total_quota,
         used_quota_bytes: used_quota,
     };
-    state.live_providers.write().insert(provider_id.clone(), provider);
+    state
+        .live_providers
+        .write()
+        .insert(provider_id.clone(), provider);
     state.provider_records.write().push(record.clone());
     tracing::info!(
         target: "virtualssd_desktop::providers",
@@ -659,9 +655,8 @@ async fn add_telegram_provider(
         storage_chat_id,
         session_db_path: telegram_db_path(&state.data_dir, &provider_id),
     };
-    let provider = Arc::new(
-        TelegramProvider::new(config).map_err(|e| format!("Telegram init failed: {e}"))?
-    );
+    let provider =
+        Arc::new(TelegramProvider::new(config).map_err(|e| format!("Telegram init failed: {e}"))?);
     let (connected, error_message) = match provider.verify_connection().await {
         Ok(_) => (true, None),
         Err(e) => {
@@ -699,7 +694,10 @@ async fn add_telegram_provider(
         total_quota_bytes: 0,
         used_quota_bytes: 0,
     };
-    state.live_providers.write().insert(provider_id.clone(), provider);
+    state
+        .live_providers
+        .write()
+        .insert(provider_id.clone(), provider);
     state.provider_records.write().push(record.clone());
     tracing::info!(
         target: "virtualssd_desktop::providers",
@@ -729,17 +727,19 @@ async fn verify_provider(
         let providers = state.live_providers.read();
         providers.get(&provider_id).cloned()
     };
-    let provider = provider.ok_or_else(|| "Provider not found in session. Re-add it to reconnect.".to_string())?;
-    let (connected, error_message, total_quota, used_quota) = match provider.verify_connection().await {
-        Ok(_) => {
-            let (total, used) = match provider.get_quota().await {
-                Ok(q) => (q.total_bytes, q.used_bytes),
-                Err(_) => (0u64, 0u64),
-            };
-            (true, None, total, used)
-        }
-        Err(e) => (false, Some(e.to_string()), 0u64, 0u64),
-    };
+    let provider = provider
+        .ok_or_else(|| "Provider not found in session. Re-add it to reconnect.".to_string())?;
+    let (connected, error_message, total_quota, used_quota) =
+        match provider.verify_connection().await {
+            Ok(_) => {
+                let (total, used) = match provider.get_quota().await {
+                    Ok(q) => (q.total_bytes, q.used_bytes),
+                    Err(_) => (0u64, 0u64),
+                };
+                (true, None, total, used)
+            }
+            Err(e) => (false, Some(e.to_string()), 0u64, 0u64),
+        };
     let mut records = state.provider_records.write();
     if let Some(record) = records.iter_mut().find(|r| r.id == provider_id) {
         record.connected = connected;
@@ -778,9 +778,16 @@ async fn remove_provider(
     state: tauri::State<'_, Arc<AppState>>,
     provider_id: String,
 ) -> Result<(), String> {
-    let in_use = state.disk_provider_map.read().values().any(|pid| *pid == provider_id);
+    let in_use = state
+        .disk_provider_map
+        .read()
+        .values()
+        .any(|pid| *pid == provider_id);
     if in_use {
-        return Err("Cannot remove: provider is still used by active disks. Delete those disks first.".to_string());
+        return Err(
+            "Cannot remove: provider is still used by active disks. Delete those disks first."
+                .to_string(),
+        );
     }
 
     let _guard = state.persist_lock.lock().await;
@@ -804,7 +811,10 @@ async fn remove_provider(
     // Drop the live provider (closing its SQLite handle) before removing its
     // provider-state files.
     state.live_providers.write().remove(&provider_id);
-    state.provider_records.write().retain(|r| r.id != provider_id);
+    state
+        .provider_records
+        .write()
+        .retain(|r| r.id != provider_id);
 
     // Provider state (cursor databases, resumable session URIs) contains live
     // capabilities; remove it on disconnect. Failures are logged, not hidden.
@@ -868,7 +878,9 @@ fn get_app_stats(state: tauri::State<Arc<AppState>>) -> Result<AppStats, String>
         total_alloc += t.allocated_chunks * DEFAULT_CHUNK_SIZE as u64;
         total_cached += t.cached_bytes;
         total_dirty += t.dirty_bytes;
-        if t.physical_drive_path.is_some() { mounted += 1; }
+        if t.physical_drive_path.is_some() {
+            mounted += 1;
+        }
     }
     Ok(AppStats {
         total_capacity_bytes: total_cap,
@@ -1063,29 +1075,27 @@ async fn import_disk(
 
     if state.disks.read().contains_key(&id) {
         let _ = std::fs::remove_dir_all(&disk_dir);
-        return Err(format!("Disk {id} was opened by another operation; import aborted."));
+        return Err(format!(
+            "Disk {id} was opened by another operation; import aborted."
+        ));
     }
 
     let cache_limit = state.settings.read().cache_limit_bytes();
-    let engine = match VirtualDiskEngine::open(
-        &disk_dir,
-        manifest.clone(),
-        Some(provider),
-        cache_limit,
-    ) {
-        Ok(engine) => engine,
-        Err(e) => {
-            let cleanup = std::fs::remove_dir_all(&disk_dir);
-            let suffix = match cleanup {
-                Ok(()) => String::new(),
-                Err(cleanup_error) => format!(
-                    " The partial directory {} could not be removed: {cleanup_error}",
-                    disk_dir.display()
-                ),
-            };
-            return Err(format!("Could not open the imported disk: {e}.{suffix}"));
-        }
-    };
+    let engine =
+        match VirtualDiskEngine::open(&disk_dir, manifest.clone(), Some(provider), cache_limit) {
+            Ok(engine) => engine,
+            Err(e) => {
+                let cleanup = std::fs::remove_dir_all(&disk_dir);
+                let suffix = match cleanup {
+                    Ok(()) => String::new(),
+                    Err(cleanup_error) => format!(
+                        " The partial directory {} could not be removed: {cleanup_error}",
+                        disk_dir.display()
+                    ),
+                };
+                return Err(format!("Could not open the imported disk: {e}.{suffix}"));
+            }
+        };
 
     let telemetry = engine.telemetry();
     let requires_recovery_key = manifest.encrypt_chunks && !engine.encryption_key_present();
@@ -1106,7 +1116,10 @@ async fn import_disk(
 
     let arc_engine = Arc::new(engine);
     state.disks.write().insert(id, arc_engine);
-    state.disk_provider_map.write().insert(id, provider_id.clone());
+    state
+        .disk_provider_map
+        .write()
+        .insert(id, provider_id.clone());
 
     tracing::info!(
         target: "virtualssd_desktop::manifest",
@@ -1131,10 +1144,7 @@ async fn import_disk(
 }
 
 #[tauri::command]
-fn export_disk_key(
-    state: tauri::State<Arc<AppState>>,
-    disk_id: String,
-) -> Result<String, String> {
+fn export_disk_key(state: tauri::State<Arc<AppState>>, disk_id: String) -> Result<String, String> {
     let id = Uuid::parse_str(&disk_id).map_err(|e| e.to_string())?;
     let engine = {
         let disks = state.disks.read();
@@ -1143,13 +1153,15 @@ fn export_disk_key(
             .cloned()
             .ok_or_else(|| "Disk not found".to_string())?
     };
-    engine.export_recovery_key().map_err(|e| e.to_string()).map(|key| {
-        tracing::warn!(
-            target: "virtualssd_desktop::security",
-            "Recovery key exported for disk {id}; the key itself is never written to the log"
-        );
-        key
-    })
+    engine
+        .export_recovery_key()
+        .map_err(|e| e.to_string())
+        .inspect(|_key| {
+            tracing::warn!(
+                target: "virtualssd_desktop::security",
+                "Recovery key exported for disk {id}; the key itself is never written to the log"
+            );
+        })
 }
 
 #[tauri::command]
@@ -1197,7 +1209,9 @@ async fn create_disk(
     })?;
     let provider_type = {
         let records = state.provider_records.read();
-        records.iter().find(|r| r.id == provider_account_id)
+        records
+            .iter()
+            .find(|r| r.id == provider_account_id)
             .map(|r| match r.kind {
                 ProviderKind::GoogleDrive => ProviderType::GoogleDrive,
                 ProviderKind::Telegram => ProviderType::Telegram,
@@ -1296,7 +1310,9 @@ fn parse_requested_drive_letter(value: Option<String>) -> Result<Option<char>, S
     let Some(value) = value else { return Ok(None) };
     let trimmed = value.trim().trim_end_matches(':').trim();
     if trimmed.len() != 1 {
-        return Err(format!("Invalid drive letter '{value}'. Use a single letter such as V:"));
+        return Err(format!(
+            "Invalid drive letter '{value}'. Use a single letter such as V:"
+        ));
     }
     let letter = trimmed.chars().next().unwrap().to_ascii_uppercase();
     if !letter.is_ascii_uppercase() {
@@ -1314,7 +1330,10 @@ async fn mount_disk(
     let id = Uuid::parse_str(&disk_id).map_err(|e| e.to_string())?;
     let engine = {
         let disks = state.disks.read();
-        disks.get(&id).cloned().ok_or_else(|| "Disk not found".to_string())?
+        disks
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| "Disk not found".to_string())?
     };
 
     if engine.telemetry().status == DiskStatus::Online {
@@ -1409,8 +1428,7 @@ async fn mount_disk(
             Ok(assigned) => {
                 engine_for_task.set_status(DiskStatus::Online);
                 engine_for_task.set_drive_letter(Some(format!("{assigned}:")));
-                engine_for_task
-                    .set_physical_drive_path(Some(attached.device_path.clone()));
+                engine_for_task.set_physical_drive_path(Some(attached.device_path.clone()));
                 engine_for_task.set_last_error(None);
                 tracing::info!(
                     target: "virtualssd_desktop::windows-vhd",
@@ -1444,7 +1462,10 @@ async fn unmount_disk(
     let id = Uuid::parse_str(&disk_id).map_err(|e| e.to_string())?;
     let engine = {
         let disks = state.disks.read();
-        disks.get(&id).cloned().ok_or_else(|| "Disk not found".to_string())?
+        disks
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| "Disk not found".to_string())?
     };
 
     let _guard = state.mount_lock.lock().await;
@@ -1492,7 +1513,10 @@ async fn sync_disk(
     let id = Uuid::parse_str(&disk_id).map_err(|e| e.to_string())?;
     let engine = {
         let disks = state.disks.read();
-        disks.get(&id).cloned().ok_or_else(|| "Disk not found".to_string())?
+        disks
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| "Disk not found".to_string())?
     };
     if engine.provider().is_none() {
         return Err("Sync requires a connected cloud provider. Add a Google Drive or Telegram account first.".to_string());
@@ -1562,7 +1586,10 @@ async fn delete_disk(
 
     let engine = {
         let disks = state.disks.read();
-        disks.get(&id).cloned().ok_or_else(|| "Disk not found".to_string())?
+        disks
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| "Disk not found".to_string())?
     };
     let telemetry = engine.telemetry();
     if telemetry.status == DiskStatus::Online || telemetry.physical_drive_path.is_some() {
@@ -1598,8 +1625,12 @@ async fn delete_disk(
     // The engine owns an open WAL file; drop every reference before removing
     // the directory or Windows refuses to delete the file.
     drop(engine);
-    std::fs::remove_dir_all(&disk_dir)
-        .map_err(|e| format!("Failed to delete disk directory {}: {e}", disk_dir.display()))?;
+    std::fs::remove_dir_all(&disk_dir).map_err(|e| {
+        format!(
+            "Failed to delete disk directory {}: {e}",
+            disk_dir.display()
+        )
+    })?;
 
     match &remote {
         Some(report) => {
@@ -1701,10 +1732,7 @@ fn load_persisted_disks(
     base_dir: &Path,
     providers: &HashMap<String, Arc<dyn CloudStorageProvider>>,
     settings: &AppSettings,
-) -> (
-    HashMap<Uuid, Arc<VirtualDiskEngine>>,
-    HashMap<Uuid, String>,
-) {
+) -> (HashMap<Uuid, Arc<VirtualDiskEngine>>, HashMap<Uuid, String>) {
     let mut map = HashMap::new();
     let mut disk_provider_map = HashMap::new();
     let disks_dir = base_dir.join("disks");
@@ -1713,7 +1741,9 @@ fn load_persisted_disks(
     };
     for entry in entries.flatten() {
         let entry_path = entry.path();
-        if !entry_path.is_dir() { continue; }
+        if !entry_path.is_dir() {
+            continue;
+        }
         let manifest_path = entry_path.join("manifest.json");
         let manifest = match DiskManifest::load_with_fallback(&manifest_path) {
             Ok(m) => m,
@@ -1738,7 +1768,12 @@ fn load_persisted_disks(
             );
         }
 
-        match VirtualDiskEngine::open(&entry_path, manifest, provider, settings.cache_limit_bytes()) {
+        match VirtualDiskEngine::open(
+            &entry_path,
+            manifest,
+            provider,
+            settings.cache_limit_bytes(),
+        ) {
             Ok(engine) => {
                 let vhdx = windows_vhd::vhdx_path_for_disk_dir(&entry_path);
                 if vhdx.exists() {
@@ -1798,7 +1833,8 @@ fn main() {
         engine_log::ENGINE_LOG_CAPACITY
     );
 
-    let app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| r"C:\VirtualSSDData".to_string());
+    let app_data =
+        std::env::var("LOCALAPPDATA").unwrap_or_else(|_| r"C:\VirtualSSDData".to_string());
     let base_dir = PathBuf::from(app_data).join("VirtualSSD");
     let _ = std::fs::create_dir_all(&base_dir);
     let _ = std::fs::create_dir_all(base_dir.join("disks"));
@@ -1817,10 +1853,7 @@ fn main() {
 
     let (persisted, disk_provider_map) =
         load_persisted_disks(&base_dir, &restored_providers, &settings_snapshot.settings);
-    tracing::info!(
-        "Loaded {} persisted disk(s) on startup",
-        persisted.len()
-    );
+    tracing::info!("Loaded {} persisted disk(s) on startup", persisted.len());
 
     let state = Arc::new(AppState {
         data_dir: base_dir,

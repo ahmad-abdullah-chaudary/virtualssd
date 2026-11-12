@@ -189,9 +189,7 @@ impl TelegramProvider {
             .bot_token
             .as_deref()
             .filter(|token| !token.trim().is_empty())
-            .ok_or_else(|| {
-                ProviderError::AuthExpired("Telegram bot token not configured".into())
-            })
+            .ok_or_else(|| ProviderError::AuthExpired("Telegram bot token not configured".into()))
     }
 
     /// Removes the bot token from any text before it can surface in an error
@@ -249,9 +247,9 @@ impl TelegramProvider {
             403 => ProviderError::AuthExpired(format!(
                 "Telegram denied access to the storage chat during {operation}: {detail}"
             )),
-            404 => ProviderError::NotFound(format!(
-                "Telegram {operation} target not found: {detail}"
-            )),
+            404 => {
+                ProviderError::NotFound(format!("Telegram {operation} target not found: {detail}"))
+            }
             429 => ProviderError::RateLimited {
                 retry_after_secs: retry_after.unwrap_or(15),
             },
@@ -261,9 +259,9 @@ impl TelegramProvider {
             code if code >= 500 => ProviderError::Network(format!(
                 "Telegram server error during {operation}: {detail}"
             )),
-            _ => ProviderError::Internal(format!(
-                "Telegram {operation} failed ({status}): {detail}"
-            )),
+            _ => {
+                ProviderError::Internal(format!("Telegram {operation} failed ({status}): {detail}"))
+            }
         }
     }
 
@@ -321,9 +319,7 @@ impl TelegramProvider {
                 chrono::Utc::now().timestamp()
             ],
         )
-        .map_err(|e| {
-            ProviderError::Internal(format!("Failed to record Telegram manifest: {e}"))
-        })?;
+        .map_err(|e| ProviderError::Internal(format!("Failed to record Telegram manifest: {e}")))?;
         Ok(())
     }
 
@@ -341,9 +337,9 @@ impl TelegramProvider {
 
     async fn local_manifest_entries(&self) -> Vec<ManifestCatalogEntry> {
         let db = self.db.lock().await;
-        let mut statement = match db.prepare(
-            "SELECT disk_id, message_id, file_id FROM manifest_index ORDER BY disk_id",
-        ) {
+        let mut statement = match db
+            .prepare("SELECT disk_id, message_id, file_id FROM manifest_index ORDER BY disk_id")
+        {
             Ok(statement) => statement,
             Err(e) => {
                 tracing::warn!("Could not read Telegram manifest index: {e}");
@@ -498,10 +494,7 @@ impl TelegramProvider {
         Ok(Some(bytes))
     }
 
-    async fn load_catalog(
-        &self,
-        token: &str,
-    ) -> Result<Vec<ManifestCatalogEntry>, ProviderError> {
+    async fn load_catalog(&self, token: &str) -> Result<Vec<ManifestCatalogEntry>, ProviderError> {
         let Some(bytes) = self
             .download_pinned_document(token, MANIFEST_CATALOG_FILE)
             .await?
@@ -649,9 +642,7 @@ impl TelegramProvider {
             .get("message_id")
             .and_then(|value| value.as_i64())
             .ok_or_else(|| {
-                ProviderError::Internal(
-                    "Pinned Telegram manifest message has no message_id".into(),
-                )
+                ProviderError::Internal("Pinned Telegram manifest message has no message_id".into())
             })?;
 
         let file_id = document
@@ -670,10 +661,7 @@ impl TelegramProvider {
     /// Failures are logged; a stale message never causes a fabricated success.
     /// Returns the pinned document's file name and message id, if the chat has
     /// a pinned document. Used to clean up legacy per-disk manifest pins.
-    async fn pinned_document(
-        &self,
-        token: &str,
-    ) -> Result<Option<(String, i64)>, ProviderError> {
+    async fn pinned_document(&self, token: &str) -> Result<Option<(String, i64)>, ProviderError> {
         let mut url = reqwest::Url::parse(&format!("{TELEGRAM_API_BASE}/bot{token}/getChat"))
             .map_err(|e| ProviderError::Internal(e.to_string()))?;
         url.query_pairs_mut()
@@ -708,18 +696,14 @@ impl TelegramProvider {
             .get("file_name")
             .and_then(|value| value.as_str())
             .ok_or_else(|| {
-                ProviderError::Internal(
-                    "Pinned Telegram document has no file_name".into(),
-                )
+                ProviderError::Internal("Pinned Telegram document has no file_name".into())
             })?
             .to_string();
         let message_id = pinned
             .get("message_id")
             .and_then(|value| value.as_i64())
             .ok_or_else(|| {
-                ProviderError::Internal(
-                    "Pinned Telegram document has no message_id".into(),
-                )
+                ProviderError::Internal("Pinned Telegram document has no message_id".into())
             })?;
 
         Ok(Some((file_name, message_id)))
@@ -903,9 +887,7 @@ impl CloudStorageProvider for TelegramProvider {
             if let Some((existing_file_id, existing_checksum, existing_size, existing_message_id)) =
                 existing
             {
-                if existing_checksum == checksum.hex_digest
-                    && existing_size == data.len() as u64
-                {
+                if existing_checksum == checksum.hex_digest && existing_size == data.len() as u64 {
                     tracing::info!(
                         "Telegram chunk {chunk_index} for disk {disk_id} is already stored with the same checksum; skipping upload"
                     );
@@ -960,9 +942,7 @@ impl CloudStorageProvider for TelegramProvider {
             .and_then(|value| value.get("file_id"))
             .and_then(|value| value.as_str())
             .ok_or_else(|| {
-                ProviderError::Internal(
-                    "Telegram sendDocument returned no document file_id".into(),
-                )
+                ProviderError::Internal("Telegram sendDocument returned no document file_id".into())
             })?
             .to_string();
 
@@ -991,7 +971,7 @@ impl CloudStorageProvider for TelegramProvider {
             if old_message_id != message_id {
                 let token = self.bot_token()?;
                 if let Err(e) = self
-                    .delete_message(&token, old_message_id, "replace_chunk")
+                    .delete_message(token, old_message_id, "replace_chunk")
                     .await
                 {
                     tracing::warn!(
@@ -1058,9 +1038,7 @@ impl CloudStorageProvider for TelegramProvider {
         let download_status = download_res.status();
         if !download_status.is_success() {
             let download_body = download_res.text().await.unwrap_or_default();
-            return Err(
-                self.map_api_error(download_status, &download_body, "file download")
-            );
+            return Err(self.map_api_error(download_status, &download_body, "file download"));
         }
 
         let bytes = download_res
@@ -1105,7 +1083,7 @@ impl CloudStorageProvider for TelegramProvider {
         };
 
         let token = self.bot_token()?;
-        self.delete_message(&token, mid, "deleteMessage").await?;
+        self.delete_message(token, mid, "deleteMessage").await?;
 
         // Only drop the local mapping once the remote delete has succeeded (or
         // the message was already gone), so a failed delete can be retried.
@@ -1188,9 +1166,7 @@ impl CloudStorageProvider for TelegramProvider {
             .get("message_id")
             .and_then(|value| value.as_i64())
             .ok_or_else(|| {
-                ProviderError::Internal(
-                    "Telegram manifest upload returned no message_id".into(),
-                )
+                ProviderError::Internal("Telegram manifest upload returned no message_id".into())
             })?;
 
         let file_id = message
@@ -1225,7 +1201,7 @@ impl CloudStorageProvider for TelegramProvider {
         // Merge this manifest into the pinned catalog. The catalog is the
         // remote source of truth that lets a fresh install discover every disk,
         // not just the most recently pinned document.
-        let mut entries = match self.load_catalog(&token).await {
+        let mut entries = match self.load_catalog(token).await {
             Ok(entries) => entries,
             Err(err) => {
                 tracing::warn!(
@@ -1249,7 +1225,7 @@ impl CloudStorageProvider for TelegramProvider {
         // A manifest that is not referenced by the pinned catalog cannot be
         // discovered by a fresh installation. Report that as a failure so the
         // caller can retry instead of claiming a fully successful publication.
-        self.upload_catalog(&token, &entries).await.map_err(|err| {
+        self.upload_catalog(token, &entries).await.map_err(|err| {
             ProviderError::Internal(format!(
                 "Manifest message {message_id} was uploaded, but the pinned Telegram \
                  catalog could not be updated; a fresh installation may not discover \
@@ -1261,7 +1237,7 @@ impl CloudStorageProvider for TelegramProvider {
         // previous manifest message for this disk can be removed.
         if let Some((previous_message_id, _)) = previous {
             if previous_message_id != message_id {
-                self.delete_previous_manifest(&token, previous_message_id)
+                self.delete_previous_manifest(token, previous_message_id)
                     .await;
             }
         }
@@ -1275,7 +1251,7 @@ impl CloudStorageProvider for TelegramProvider {
 
         // Fast path: a locally recorded manifest from this installation.
         if let Some((message_id, file_id)) = self.cached_manifest(disk_id).await {
-            match self.download_manifest(&token, &file_id, disk_id).await {
+            match self.download_manifest(token, &file_id, disk_id).await {
                 Ok(manifest) => return Ok(manifest),
                 Err(err) if is_transient_provider_error(&err) => return Err(err),
                 Err(err) => {
@@ -1292,9 +1268,9 @@ impl CloudStorageProvider for TelegramProvider {
 
         // Fresh-install path: the pinned catalog maps disk ids to manifest
         // documents, so no local state is required.
-        let catalog = self.load_catalog(&token).await?;
+        let catalog = self.load_catalog(token).await?;
         if let Some(entry) = catalog.iter().find(|entry| entry.disk_id == disk_id) {
-            match self.download_manifest(&token, &entry.file_id, disk_id).await {
+            match self.download_manifest(token, &entry.file_id, disk_id).await {
                 Ok(manifest) => {
                     self.record_manifest(disk_id, entry.message_id, &entry.file_id)
                         .await?;
@@ -1311,9 +1287,9 @@ impl CloudStorageProvider for TelegramProvider {
 
         // Legacy path: installations that pinned a per-disk manifest before
         // the catalog existed.
-        let (message_id, file_id) = self.discover_pinned_manifest(&token, disk_id).await?;
+        let (message_id, file_id) = self.discover_pinned_manifest(token, disk_id).await?;
         self.record_manifest(disk_id, message_id, &file_id).await?;
-        self.download_manifest(&token, &file_id, disk_id).await
+        self.download_manifest(token, &file_id, disk_id).await
     }
 
     async fn delete_manifest(&self, disk_id: Uuid) -> Result<(), ProviderError> {
@@ -1322,7 +1298,7 @@ impl CloudStorageProvider for TelegramProvider {
 
         // Read the catalog first. If the catalog itself cannot be read, abort
         // before deleting anything so the remote state stays consistent.
-        let mut entries = self.load_catalog(&token).await?;
+        let mut entries = self.load_catalog(token).await?;
         let catalog_contained_disk = entries.iter().any(|entry| entry.disk_id == disk_id);
 
         let mut message_ids: Vec<i64> = entries
@@ -1337,7 +1313,7 @@ impl CloudStorageProvider for TelegramProvider {
         }
 
         // Legacy installations pinned the per-disk manifest document directly.
-        if let Some((name, message_id)) = self.pinned_document(&token).await? {
+        if let Some((name, message_id)) = self.pinned_document(token).await? {
             if name == Self::manifest_file_name(disk_id) {
                 message_ids.push(message_id);
             }
@@ -1347,7 +1323,7 @@ impl CloudStorageProvider for TelegramProvider {
         message_ids.dedup();
 
         for message_id in message_ids {
-            self.delete_message(&token, message_id, "delete_manifest")
+            self.delete_message(token, message_id, "delete_manifest")
                 .await?;
         }
 
@@ -1356,7 +1332,7 @@ impl CloudStorageProvider for TelegramProvider {
         // Keep the pinned catalog truthful. Only republish it when it existed,
         // so deleting a legacy disk does not create a catalog unnecessarily.
         if catalog_contained_disk {
-            self.upload_catalog(&token, &entries).await?;
+            self.upload_catalog(token, &entries).await?;
         }
 
         Ok(())
@@ -1403,15 +1379,10 @@ mod tests {
     fn provider_redacts_token_from_error_text() {
         let dir = tempfile::tempdir().unwrap();
         let token = "123456:SUPER-SECRET";
-        let provider = TelegramProvider::new(sample_config(
-            token,
-            dir.path().join("telegram.db"),
-        ))
-        .unwrap();
+        let provider =
+            TelegramProvider::new(sample_config(token, dir.path().join("telegram.db"))).unwrap();
 
-        let message = format!(
-            "request to https://api.telegram.org/bot{token}/getMe failed"
-        );
+        let message = format!("request to https://api.telegram.org/bot{token}/getMe failed");
         let redacted = provider.redact(&message);
 
         assert!(!redacted.contains(token));
@@ -1444,16 +1415,22 @@ mod tests {
     #[test]
     fn catalog_upsert_appends_new_disk() {
         let mut entries = Vec::new();
-        upsert_catalog_entry(&mut entries, ManifestCatalogEntry {
-            disk_id: Uuid::new_v4(),
-            message_id: 1,
-            file_id: "a".to_string(),
-        });
-        upsert_catalog_entry(&mut entries, ManifestCatalogEntry {
-            disk_id: Uuid::new_v4(),
-            message_id: 2,
-            file_id: "b".to_string(),
-        });
+        upsert_catalog_entry(
+            &mut entries,
+            ManifestCatalogEntry {
+                disk_id: Uuid::new_v4(),
+                message_id: 1,
+                file_id: "a".to_string(),
+            },
+        );
+        upsert_catalog_entry(
+            &mut entries,
+            ManifestCatalogEntry {
+                disk_id: Uuid::new_v4(),
+                message_id: 2,
+                file_id: "b".to_string(),
+            },
+        );
 
         assert_eq!(entries.len(), 2);
     }

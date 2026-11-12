@@ -49,8 +49,7 @@ impl AppSettings {
                 "Cache limit must be between {CACHE_LIMIT_MIN_GB} and {CACHE_LIMIT_MAX_GB} GiB"
             ));
         }
-        if !(POLL_INTERVAL_MIN_MS..=POLL_INTERVAL_MAX_MS)
-            .contains(&self.telemetry_poll_interval_ms)
+        if !(POLL_INTERVAL_MIN_MS..=POLL_INTERVAL_MAX_MS).contains(&self.telemetry_poll_interval_ms)
         {
             return Err(format!(
                 "Telemetry polling interval must be between {POLL_INTERVAL_MIN_MS} and {POLL_INTERVAL_MAX_MS} ms"
@@ -89,8 +88,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
 
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, bytes)
-        .map_err(|e| format!("Cannot write {}: {e}", tmp.display()))?;
+    std::fs::write(&tmp, bytes).map_err(|e| format!("Cannot write {}: {e}", tmp.display()))?;
     if let Err(e) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
         return Err(format!("Cannot replace {}: {e}", path.display()));
@@ -183,16 +181,22 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_values() {
-        let mut settings = AppSettings::default();
-        settings.cache_limit_gb = 0;
+        let settings = AppSettings {
+            cache_limit_gb: 0,
+            ..Default::default()
+        };
         assert!(settings.validate().is_err());
 
-        settings = AppSettings::default();
-        settings.telemetry_poll_interval_ms = 10;
+        let settings = AppSettings {
+            telemetry_poll_interval_ms: 10,
+            ..Default::default()
+        };
         assert!(settings.validate().is_err());
 
-        settings = AppSettings::default();
-        settings.default_capacity_gb = 0;
+        let settings = AppSettings {
+            default_capacity_gb: 0,
+            ..Default::default()
+        };
         assert!(settings.validate().is_err());
     }
 

@@ -22,7 +22,9 @@ pub enum BlockMapError {
         capacity: u64,
     },
 
-    #[error("Unaligned sector access: offset {offset} is not aligned to sector size {sector_size}")]
+    #[error(
+        "Unaligned sector access: offset {offset} is not aligned to sector size {sector_size}"
+    )]
     UnalignedSector { offset: u64, sector_size: usize },
 
     #[error("Zero length I/O request")]
@@ -55,7 +57,7 @@ impl DiskGeometry {
     }
 
     pub fn total_chunks(&self) -> u64 {
-        (self.total_capacity_bytes + self.chunk_size as u64 - 1) / (self.chunk_size as u64)
+        self.total_capacity_bytes.div_ceil(self.chunk_size as u64)
     }
 
     pub fn total_sectors(&self) -> u64 {
@@ -81,7 +83,10 @@ pub fn slice_io(
     if length == 0 {
         return Err(BlockMapError::ZeroLengthIo);
     }
-    if offset.checked_add(length as u64).map_or(true, |end| end > geometry.total_capacity_bytes) {
+    if offset
+        .checked_add(length as u64)
+        .is_none_or(|end| end > geometry.total_capacity_bytes)
+    {
         return Err(BlockMapError::OutOfBounds {
             offset,
             length,

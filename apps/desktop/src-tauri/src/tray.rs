@@ -23,7 +23,13 @@ const SHOW_DIAGNOSTICS_EVENT: &str = "show-diagnostics";
 /// native shell to host it. Failures are logged rather than silently ignored,
 /// because a missing tray icon is a real, user-visible difference.
 pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let toggle = MenuItem::with_id(app, MENU_TOGGLE, "Show / Hide VirtualSSD", true, None::<&str>)?;
+    let toggle = MenuItem::with_id(
+        app,
+        MENU_TOGGLE,
+        "Show / Hide VirtualSSD",
+        true,
+        None::<&str>,
+    )?;
     let diagnostics = MenuItem::with_id(app, MENU_DIAGNOSTICS, "Diagnostics", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, MENU_QUIT, "Quit VirtualSSD", true, None::<&str>)?;
 

@@ -19,16 +19,19 @@ mod tests {
         {
             let mut wal = WriteAheadJournal::open(&wal_path).unwrap();
             let tx1 = wal.begin_transaction().unwrap();
-            wal.record_chunk_write(tx1, 0, 0, b"Valid transaction data #1").unwrap();
+            wal.record_chunk_write(tx1, 0, 0, b"Valid transaction data #1")
+                .unwrap();
             wal.commit_transaction(tx1).unwrap();
 
             let tx2 = wal.begin_transaction().unwrap();
-            wal.record_chunk_write(tx2, 1, 0, b"Valid transaction data #2").unwrap();
+            wal.record_chunk_write(tx2, 1, 0, b"Valid transaction data #2")
+                .unwrap();
             wal.commit_transaction(tx2).unwrap();
 
             // Simulate power cut mid-write: write incomplete bytes
             let tx3 = wal.begin_transaction().unwrap();
-            wal.record_chunk_write(tx3, 2, 0, b"Partial write interrupted").unwrap();
+            wal.record_chunk_write(tx3, 2, 0, b"Partial write interrupted")
+                .unwrap();
             // Incomplete: no commit, cut off bytes
         }
 
@@ -55,7 +58,10 @@ mod tests {
         // 4. Verify uncommitted partial write was not accepted
         let mut uncommitted_buf = vec![0xFFu8; 25];
         let chunk1_offset = DEFAULT_CHUNK_SIZE as u64;
-        engine.read_blocks(chunk1_offset, &mut uncommitted_buf).await.unwrap();
+        engine
+            .read_blocks(chunk1_offset, &mut uncommitted_buf)
+            .await
+            .unwrap();
         assert_eq!(&uncommitted_buf, b"Valid transaction data #2");
     }
 
@@ -76,7 +82,10 @@ mod tests {
 
         // Read unwritten sparse block at 500 MiB offset
         let mut buffer = vec![0xFFu8; 4096];
-        engine.read_blocks(500 * 1024 * 1024, &mut buffer).await.unwrap();
+        engine
+            .read_blocks(500 * 1024 * 1024, &mut buffer)
+            .await
+            .unwrap();
 
         // Must strictly return deterministic zeros without allocating or contacting cloud
         assert!(buffer.iter().all(|&b| b == 0));

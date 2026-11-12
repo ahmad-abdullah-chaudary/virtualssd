@@ -60,6 +60,9 @@ impl WriteAheadJournal {
             .read(true)
             .write(true)
             .create(true)
+            // The journal must survive a restart: an existing file is appended
+            // to and recovered, never truncated.
+            .truncate(false)
             .open(&path)?;
 
         let mut journal = Self {
@@ -160,43 +163,41 @@ impl WriteAheadJournal {
             }
 
             match serde_json::from_slice::<JournalEntry>(&data_buf) {
-                Ok(entry) => {
-                    match entry {
-                        JournalEntry::Begin { tx_id, .. } => {
-                            report.max_tx_id = report.max_tx_id.max(tx_id);
-                            active_txs.insert(tx_id, Vec::new());
-                        }
-                        JournalEntry::ChunkWrite {
-                            tx_id,
-                            chunk_index,
-                            offset_in_chunk,
-                            data,
-                            checksum,
-                        } => {
-                            if let Some(writes) = active_txs.get_mut(&tx_id) {
-                                writes.push((chunk_index, offset_in_chunk, data, checksum));
-                            }
-                        }
-                        JournalEntry::Commit { tx_id, .. } => {
-                            if let Some(writes) = active_txs.remove(&tx_id) {
-                                report.committed_transactions += 1;
-                                for (chunk_index, offset_in_chunk, data, checksum) in writes {
-                                    report.replayed_writes.push(ReplayedWrite {
-                                        tx_id,
-                                        chunk_index,
-                                        offset_in_chunk,
-                                        data,
-                                        checksum,
-                                    });
-                                }
-                            }
-                        }
-                        JournalEntry::Abort { tx_id } => {
-                            active_txs.remove(&tx_id);
-                            report.aborted_transactions += 1;
+                Ok(entry) => match entry {
+                    JournalEntry::Begin { tx_id, .. } => {
+                        report.max_tx_id = report.max_tx_id.max(tx_id);
+                        active_txs.insert(tx_id, Vec::new());
+                    }
+                    JournalEntry::ChunkWrite {
+                        tx_id,
+                        chunk_index,
+                        offset_in_chunk,
+                        data,
+                        checksum,
+                    } => {
+                        if let Some(writes) = active_txs.get_mut(&tx_id) {
+                            writes.push((chunk_index, offset_in_chunk, data, checksum));
                         }
                     }
-                }
+                    JournalEntry::Commit { tx_id, .. } => {
+                        if let Some(writes) = active_txs.remove(&tx_id) {
+                            report.committed_transactions += 1;
+                            for (chunk_index, offset_in_chunk, data, checksum) in writes {
+                                report.replayed_writes.push(ReplayedWrite {
+                                    tx_id,
+                                    chunk_index,
+                                    offset_in_chunk,
+                                    data,
+                                    checksum,
+                                });
+                            }
+                        }
+                    }
+                    JournalEntry::Abort { tx_id } => {
+                        active_txs.remove(&tx_id);
+                        report.aborted_transactions += 1;
+                    }
+                },
                 Err(_) => {
                     report.corrupt_tail_bytes += (len + 4) as u64;
                     break;
@@ -259,7 +260,8 @@ mod tests {
 
             // Uncommitted transaction to test clean discarding
             let tx2 = wal.begin_transaction().unwrap();
-            wal.record_chunk_write(tx2, 1, 0, b"uncommitted garbage").unwrap();
+            wal.record_chunk_write(tx2, 1, 0, b"uncommitted garbage")
+                .unwrap();
             // Don't commit tx2!
         }
 
@@ -272,6 +274,9 @@ mod tests {
         assert_eq!(report.replayed_writes.len(), 1);
         assert_eq!(report.replayed_writes[0].chunk_index, 0);
         assert_eq!(report.replayed_writes[0].offset_in_chunk, 512);
-        assert_eq!(report.replayed_writes[0].data, b"Sector data for crash recovery test");
+        assert_eq!(
+            report.replayed_writes[0].data,
+            b"Sector data for crash recovery test"
+        );
     }
 }

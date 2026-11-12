@@ -26,8 +26,8 @@ use virtualssd_provider_contract::{CloudStorageProvider, ProviderError};
 
 pub mod transfer;
 use transfer::{
-    checkpoint_manifest, AbortFlag, ChunkOutcome, ChunkProducer, ChunkWork, TransferCounters,
-    UploadContext, MANIFEST_CHECKPOINT_INTERVAL,
+    checkpoint_manifest, AbortFlag, ChunkOutcome, ChunkProducer, ChunkWork, SnapshotLayout,
+    TransferCounters, UploadContext, MANIFEST_CHECKPOINT_INTERVAL,
 };
 
 #[derive(Debug, Error)]
@@ -206,7 +206,7 @@ impl VirtualDiskEngine {
         max_cache_bytes: u64,
     ) -> Result<Self, StorageEngineError> {
         let disk_dir = disk_dir.as_ref().to_path_buf();
-        std::fs::create_dir_all(&disk_dir).map_err(|e| ManifestError::Io(e))?;
+        std::fs::create_dir_all(&disk_dir).map_err(ManifestError::Io)?;
 
         let manifest_path = disk_dir.join("manifest.json");
         manifest.save_atomic(&manifest_path)?;
@@ -269,7 +269,11 @@ impl VirtualDiskEngine {
     }
 
     /// Reads sectors spanning arbitrary chunk boundaries
-    pub async fn read_blocks(&self, offset: u64, buffer: &mut [u8]) -> Result<(), StorageEngineError> {
+    pub async fn read_blocks(
+        &self,
+        offset: u64,
+        buffer: &mut [u8],
+    ) -> Result<(), StorageEngineError> {
         let geometry = self.manifest.read().geometry;
         let slices = slice_io(&geometry, offset, buffer.len())?;
 
@@ -314,7 +318,8 @@ impl VirtualDiskEngine {
                             .read_chunk_slice(chunk_idx, slice.chunk_offset, slice_buf)?;
                     }
                     Err(e) => {
-                        *self.last_error.write() = Some(format!("Failed to fetch chunk #{chunk_idx}: {e}"));
+                        *self.last_error.write() =
+                            Some(format!("Failed to fetch chunk #{chunk_idx}: {e}"));
                         return Err(StorageEngineError::Provider(e));
                     }
                 }
@@ -442,8 +447,7 @@ impl VirtualDiskEngine {
     /// released the file. Chunks whose content is unchanged are skipped;
     /// chunks that became zero are removed from the remote store.
     pub async fn sync_vhdx_snapshot(&self) -> Result<MirrorReport, StorageEngineError> {
-        if *self.status.read() == DiskStatus::Online || self.physical_drive_path.read().is_some()
-        {
+        if *self.status.read() == DiskStatus::Online || self.physical_drive_path.read().is_some() {
             return Err(StorageEngineError::DiskMounted);
         }
 
@@ -486,7 +490,7 @@ impl VirtualDiskEngine {
 
         let namespace = vhdx_namespace_id(disk_id);
         let chunk_size_u64 = chunk_size as u64;
-        let new_chunk_count = (file_size + chunk_size_u64 - 1) / chunk_size_u64;
+        let new_chunk_count = file_size.div_ceil(chunk_size_u64);
         let old_chunk_count = self
             .manifest
             .read()
@@ -537,13 +541,15 @@ impl VirtualDiskEngine {
             tokio::spawn(async move {
                 let mut producer = ChunkProducer::new(
                     file,
-                    file_size,
-                    chunk_size,
-                    encrypt_chunks,
-                    cipher,
-                    previous_chunks,
-                    new_chunk_count,
-                    old_chunk_count,
+                    SnapshotLayout {
+                        file_size,
+                        chunk_size,
+                        encrypt_chunks,
+                        cipher,
+                        previous: previous_chunks,
+                        new_chunk_count,
+                        old_chunk_count,
+                    },
                 );
                 loop {
                     if abort.is_aborted() {
@@ -582,13 +588,11 @@ impl VirtualDiskEngine {
 
             // Backpressure: the dispatcher waits for a free slot before
             // queueing more work, so the producer cannot run ahead.
-            let permit = semaphore
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|_| StorageEngineError::WindowsDevice(
+            let permit = semaphore.clone().acquire_owned().await.map_err(|_| {
+                StorageEngineError::WindowsDevice(
                     "The transfer semaphore was closed unexpectedly".into(),
-                ))?;
+                )
+            })?;
 
             let context = Arc::new(UploadContext {
                 provider: context.provider.clone(),
@@ -767,8 +771,7 @@ impl VirtualDiskEngine {
             .vhdx_file_size
             .ok_or(StorageEngineError::NoVhdxSnapshot)?;
 
-        if file_size == 0 || file_size > manifest.geometry.total_capacity_bytes + 64 * 1024 * 1024
-        {
+        if file_size == 0 || file_size > manifest.geometry.total_capacity_bytes + 64 * 1024 * 1024 {
             return Err(StorageEngineError::Manifest(ManifestError::CorruptManifest(
                 format!(
                     "Remote manifest reports an implausible VHDX size of {file_size} bytes for a {} byte disk",
@@ -778,7 +781,7 @@ impl VirtualDiskEngine {
         }
 
         let chunk_size = manifest.geometry.chunk_size as u64;
-        let expected_chunks = (file_size + chunk_size - 1) / chunk_size;
+        let expected_chunks = file_size.div_ceil(chunk_size);
         if let Some(last) = manifest.vhdx_chunks.keys().next_back() {
             if *last >= expected_chunks {
                 return Err(StorageEngineError::Manifest(ManifestError::CorruptManifest(
@@ -851,7 +854,6 @@ impl VirtualDiskEngine {
                 let is_encrypted = descriptor.is_encrypted;
 
                 let provider = provider.clone();
-                let namespace = namespace;
                 let file = file.clone();
                 let abort = abort.clone();
                 let downloaded = downloaded.clone();
@@ -987,8 +989,7 @@ impl VirtualDiskEngine {
     /// deletes the published manifest. Objects are removed before the local
     /// manifest is cleared, and any failure aborts so a retry remains possible.
     pub async fn delete_remote_data(&self) -> Result<RemoteDeleteReport, StorageEngineError> {
-        if *self.status.read() == DiskStatus::Online || self.physical_drive_path.read().is_some()
-        {
+        if *self.status.read() == DiskStatus::Online || self.physical_drive_path.read().is_some() {
             return Err(StorageEngineError::DiskMounted);
         }
 
@@ -1165,10 +1166,9 @@ impl VirtualDiskEngine {
                     {
                         missing += 1;
                     }
-                    Err(e) => errors.push((
-                        *chunk_index,
-                        format!("Could not read the local VHDX: {e}"),
-                    )),
+                    Err(e) => {
+                        errors.push((*chunk_index, format!("Could not read the local VHDX: {e}")))
+                    }
                 }
             }
 
@@ -1251,7 +1251,10 @@ mod tests {
 
         // Verify unwritten sparse blocks return zero
         let mut zero_buf = vec![0xFFu8; 1024];
-        engine.read_blocks(1024 * 1024 * 50, &mut zero_buf).await.unwrap();
+        engine
+            .read_blocks(1024 * 1024 * 50, &mut zero_buf)
+            .await
+            .unwrap();
         assert_eq!(zero_buf, vec![0u8; 1024]);
     }
 }

@@ -13,11 +13,7 @@ fn main() {
 
     // The build number is the numeric part after '+', used for the Windows
     // file version's fourth component and shown in the UI footer.
-    let build = version
-        .split('+')
-        .nth(1)
-        .unwrap_or("0")
-        .to_string();
+    let build = version.split('+').nth(1).unwrap_or("0").to_string();
 
     println!("cargo:rustc-env=VIRTUALSSD_BUILD_VERSION={version}");
     println!("cargo:rustc-env=VIRTUALSSD_BUILD_NUMBER={build}");

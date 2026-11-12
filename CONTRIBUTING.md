@@ -56,7 +56,7 @@ work on. That is not a wasted contribution — it is a request for direction.
 **Requirements**
 
 - Windows 11 x64 or Windows 10 x64 (build 19044+)
-- Rust 1.80 or newer — `rustup default stable`
+- Rust 1.82 or newer — `rustup default stable`
 - Node.js 20+ and `pnpm` — `npm install -g pnpm`
 - The Microsoft Edge WebView2 Runtime (preinstalled on current Windows)
 

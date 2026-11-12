@@ -120,7 +120,10 @@ impl DiskManifest {
         remote_object_id: Option<String>,
         is_encrypted: bool,
     ) {
-        let prev_ver = self.chunks.get(&chunk_index).map_or(0, |c| c.remote_version);
+        let prev_ver = self
+            .chunks
+            .get(&chunk_index)
+            .map_or(0, |c| c.remote_version);
         let desc = ChunkDescriptor {
             chunk_index,
             length,

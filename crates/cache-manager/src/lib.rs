@@ -55,7 +55,11 @@ pub struct PersistentCacheManager {
 }
 
 impl PersistentCacheManager {
-    pub fn new(cache_dir: impl AsRef<Path>, max_bytes: u64, chunk_size: usize) -> Result<Self, CacheError> {
+    pub fn new(
+        cache_dir: impl AsRef<Path>,
+        max_bytes: u64,
+        chunk_size: usize,
+    ) -> Result<Self, CacheError> {
         let cache_dir = cache_dir.as_ref().to_path_buf();
         fs::create_dir_all(&cache_dir)?;
 
@@ -150,12 +154,16 @@ impl PersistentCacheManager {
             .read(true)
             .write(true)
             .create(true)
+            // The chunk file may already exist and must keep its contents: the
+            // cache writes into a slice of it, it does not replace it.
+            .truncate(false)
             .open(&path)?;
 
         if !exists {
             // Allocate sparse or zero-fill up to chunk_size
             file.set_len(self.chunk_size as u64)?;
-            self.total_cached_bytes.fetch_add(self.chunk_size as u64, Ordering::Relaxed);
+            self.total_cached_bytes
+                .fetch_add(self.chunk_size as u64, Ordering::Relaxed);
         }
 
         file.seek(SeekFrom::Start(offset as u64))?;
@@ -163,10 +171,13 @@ impl PersistentCacheManager {
         file.flush()?;
 
         let mut entries = self.entries.write();
-        let was_dirty = entries.get(&chunk_index).map_or(false, |e| e.state == ChunkState::Dirty);
+        let was_dirty = entries
+            .get(&chunk_index)
+            .is_some_and(|e| e.state == ChunkState::Dirty);
 
         if !was_dirty {
-            self.dirty_bytes.fetch_add(self.chunk_size as u64, Ordering::Relaxed);
+            self.dirty_bytes
+                .fetch_add(self.chunk_size as u64, Ordering::Relaxed);
         }
 
         entries.insert(
@@ -189,7 +200,8 @@ impl PersistentCacheManager {
         let mut entries = self.entries.write();
         if let Some(entry) = entries.get_mut(&chunk_index) {
             if entry.state == ChunkState::Dirty || entry.state == ChunkState::PendingUpload {
-                self.dirty_bytes.fetch_sub(self.chunk_size as u64, Ordering::Relaxed);
+                self.dirty_bytes
+                    .fetch_sub(self.chunk_size as u64, Ordering::Relaxed);
             }
             entry.state = ChunkState::Committed;
         }
@@ -214,7 +226,12 @@ impl PersistentCacheManager {
         Ok(buf)
     }
 
-    pub fn put_chunk_bytes(&self, chunk_index: u64, data: &[u8], state: ChunkState) -> Result<(), CacheError> {
+    pub fn put_chunk_bytes(
+        &self,
+        chunk_index: u64,
+        data: &[u8],
+        state: ChunkState,
+    ) -> Result<(), CacheError> {
         let path = self.chunk_path(chunk_index);
         let mut file = File::create(&path)?;
         file.write_all(data)?;
@@ -232,7 +249,8 @@ impl PersistentCacheManager {
             },
         );
 
-        self.total_cached_bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
+        self.total_cached_bytes
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
         Ok(())
     }
 
@@ -257,7 +275,8 @@ impl PersistentCacheManager {
             let path = self.chunk_path(idx);
             let _ = fs::remove_file(path);
             entries.remove(&idx);
-            self.total_cached_bytes.fetch_sub(size as u64, Ordering::Relaxed);
+            self.total_cached_bytes
+                .fetch_sub(size as u64, Ordering::Relaxed);
 
             if self.total_cached_bytes.load(Ordering::Relaxed) < (max_bytes * 8 / 10) {
                 break;

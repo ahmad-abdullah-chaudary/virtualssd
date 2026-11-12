@@ -90,10 +90,17 @@ pub enum ChunkOutcome {
         remote_checksum: Option<ChunkChecksum>,
         remote_object_id: String,
     },
-    Deleted { chunk_index: u64 },
-    Skipped { chunk_index: u64 },
+    Deleted {
+        chunk_index: u64,
+    },
+    Skipped {
+        chunk_index: u64,
+    },
     /// The chunk uploaded but a follow-up cleanup step failed.
-    Warning { chunk_index: u64, message: String },
+    Warning {
+        chunk_index: u64,
+        message: String,
+    },
 }
 
 /// Counters shared between the producer and the consumers.
@@ -172,26 +179,39 @@ pub struct ChunkProducer {
     scan_count: u64,
     next_index: u64,
 }
+/// The layout of the snapshot a producer walks.
+///
+/// Grouping these keeps the producer's constructor readable and makes it
+/// obvious that they all describe the same file at the same moment.
+pub struct SnapshotLayout {
+    /// The size of the VHDX file in bytes.
+    pub file_size: u64,
+    /// The chunk size in bytes.
+    pub chunk_size: usize,
+    /// Whether chunk payloads are encrypted.
+    pub encrypt_chunks: bool,
+    /// The cipher used for encryption. `None` when the disk is not encrypted.
+    pub cipher: Option<ChunkCipher>,
+    /// The chunk descriptors recorded by the previous mirror.
+    pub previous: HashMap<u64, ChunkDescriptor>,
+    /// How many chunks the current file holds.
+    pub new_chunk_count: u64,
+    /// How many chunks the previous mirror recorded.
+    pub old_chunk_count: u64,
+}
+
 impl ChunkProducer {
-    pub fn new(
-        file: tokio::fs::File,
-        file_size: u64,
-        chunk_size: usize,
-        encrypt_chunks: bool,
-        cipher: Option<ChunkCipher>,
-        previous: HashMap<u64, ChunkDescriptor>,
-        new_chunk_count: u64,
-        old_chunk_count: u64,
-    ) -> Self {
+    pub fn new(file: tokio::fs::File, layout: SnapshotLayout) -> Self {
+        let scan_count = layout.new_chunk_count.max(layout.old_chunk_count);
         Self {
             file,
-            file_size,
-            chunk_size,
-            encrypt_chunks,
-            cipher,
-            previous,
-            new_chunk_count,
-            scan_count: new_chunk_count.max(old_chunk_count),
+            file_size: layout.file_size,
+            chunk_size: layout.chunk_size,
+            encrypt_chunks: layout.encrypt_chunks,
+            cipher: layout.cipher,
+            previous: layout.previous,
+            new_chunk_count: layout.new_chunk_count,
+            scan_count,
             next_index: 0,
         }
     }
@@ -255,10 +275,9 @@ impl ChunkProducer {
             }
 
             let (payload, remote_checksum) = if self.encrypt_chunks {
-                let cipher = self
-                    .cipher
-                    .as_ref()
-                    .ok_or_else(|| std::io::Error::other("encryption is enabled but no key is loaded"))?;
+                let cipher = self.cipher.as_ref().ok_or_else(|| {
+                    std::io::Error::other("encryption is enabled but no key is loaded")
+                })?;
                 let ciphertext = cipher
                     .encrypt(&plaintext)
                     .map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -329,18 +348,11 @@ pub async fn perform_upload_work(
             payload,
             superseded_remote_object_id,
         } => {
-            let upload_checksum = remote_checksum
-                .as_ref()
-                .unwrap_or(&plaintext_checksum);
+            let upload_checksum = remote_checksum.as_ref().unwrap_or(&plaintext_checksum);
 
             let upload = context
                 .provider
-                .upload_chunk(
-                    context.namespace,
-                    chunk_index,
-                    &payload,
-                    upload_checksum,
-                )
+                .upload_chunk(context.namespace, chunk_index, &payload, upload_checksum)
                 .await?;
 
             // Remove the superseded object only after the new object is safely
@@ -475,13 +487,15 @@ mod tests {
             let file = tokio::fs::File::open(&path).await.unwrap();
             let mut producer = ChunkProducer::new(
                 file,
-                content.len() as u64,
-                4096,
-                false,
-                None,
-                previous,
-                1,
-                1,
+                SnapshotLayout {
+                    file_size: content.len() as u64,
+                    chunk_size: 4096,
+                    encrypt_chunks: false,
+                    cipher: None,
+                    previous,
+                    new_chunk_count: 1,
+                    old_chunk_count: 1,
+                },
             );
             producer.next().await.unwrap()
         });

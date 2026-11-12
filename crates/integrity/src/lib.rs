@@ -73,10 +73,15 @@ impl ChunkChecksum {
 
 impl fmt::Display for ChunkChecksum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", match self.algorithm {
-            HashAlgorithm::Blake3 => "blake3",
-            HashAlgorithm::Sha256 => "sha256",
-        }, self.hex_digest)
+        write!(
+            f,
+            "{}:{}",
+            match self.algorithm {
+                HashAlgorithm::Blake3 => "blake3",
+                HashAlgorithm::Sha256 => "sha256",
+            },
+            self.hex_digest
+        )
     }
 }
 

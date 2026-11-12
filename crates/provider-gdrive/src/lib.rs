@@ -4,7 +4,7 @@
 //! BLAKE3/SHA-256 verification, and exponential backoff retry policies.
 
 use async_trait::async_trait;
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, LOCATION};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -45,6 +45,17 @@ struct UploadSession {
     created_at: i64,
 }
 
+/// The chunk that is being uploaded.
+///
+/// Grouping the chunk identity and its payload keeps the upload functions
+/// readable and makes it obvious that all of these describe the same chunk.
+struct ChunkUpload<'a> {
+    disk_id: Uuid,
+    chunk_index: u64,
+    data: &'a [u8],
+    checksum: &'a ChunkChecksum,
+}
+
 /// Result of asking Google for the state of a resumable session.
 enum SessionProbe {
     Complete { object_id: String, version: u64 },
@@ -61,10 +72,14 @@ fn session_key(disk_id: Uuid, chunk_index: u64) -> String {
 fn parse_resume_offset(range: Option<&str>, total: u64) -> Result<u64, ProviderError> {
     let Some(raw) = range else { return Ok(0) };
     let spec = raw.strip_prefix("bytes=").ok_or_else(|| {
-        ProviderError::Internal(format!("Google Drive returned an invalid Range header '{raw}'"))
+        ProviderError::Internal(format!(
+            "Google Drive returned an invalid Range header '{raw}'"
+        ))
     })?;
     let (_, end) = spec.split_once('-').ok_or_else(|| {
-        ProviderError::Internal(format!("Google Drive returned an invalid Range header '{raw}'"))
+        ProviderError::Internal(format!(
+            "Google Drive returned an invalid Range header '{raw}'"
+        ))
     })?;
     let end: u64 = end.parse().map_err(|e| {
         ProviderError::Internal(format!(
@@ -141,8 +156,7 @@ fn write_session_file(
     std::fs::create_dir_all(dir)?;
     let path = dir.join(UPLOAD_SESSION_FILE);
     let tmp = dir.join(format!("{UPLOAD_SESSION_FILE}.tmp"));
-    let bytes = serde_json::to_vec_pretty(sessions)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let bytes = serde_json::to_vec_pretty(sessions).map_err(std::io::Error::other)?;
     std::fs::write(&tmp, bytes)?;
     std::fs::rename(&tmp, &path)?;
     Ok(())
@@ -168,7 +182,9 @@ fn map_http_error(status: reqwest::StatusCode, body: String) -> ProviderError {
                 || lowered.contains("storagequotaexceeded")
                 || lowered.contains("insufficient storage")
             {
-                ProviderError::QuotaExceeded(format!("Google Drive storage quota exceeded: {detail}"))
+                ProviderError::QuotaExceeded(format!(
+                    "Google Drive storage quota exceeded: {detail}"
+                ))
             } else if lowered.contains("ratelimitexceeded")
                 || lowered.contains("userratelimitexceeded")
                 || lowered.contains("rate limit")
@@ -176,16 +192,18 @@ fn map_http_error(status: reqwest::StatusCode, body: String) -> ProviderError {
                 // Google asks clients to retry with exponential backoff. The
                 // adapter has no background retry loop, so surface a retry
                 // interval and let the caller retry manually.
-                ProviderError::RateLimited { retry_after_secs: 60 }
+                ProviderError::RateLimited {
+                    retry_after_secs: 60,
+                }
             } else {
                 ProviderError::AuthExpired(format!("Google Drive denied the request: {detail}"))
             }
         }
         404 => ProviderError::NotFound(format!("Google Drive object not found: {detail}")),
-        413 | 507 => {
-            ProviderError::QuotaExceeded("Google Drive storage quota exceeded".into())
-        }
-        429 => ProviderError::RateLimited { retry_after_secs: 5 },
+        413 | 507 => ProviderError::QuotaExceeded("Google Drive storage quota exceeded".into()),
+        429 => ProviderError::RateLimited {
+            retry_after_secs: 5,
+        },
         s if s >= 500 => {
             ProviderError::Network(format!("Google Drive server error ({status}): {detail}"))
         }
@@ -272,7 +290,8 @@ fn build_client() -> Client {
 }
 
 impl GoogleDriveProvider {
-    pub fn new(credentials: GoogleDriveCredentials) -> Self {        Self {
+    pub fn new(credentials: GoogleDriveCredentials) -> Self {
+        Self {
             client: build_client(),
             credentials: Arc::new(RwLock::new(credentials)),
             root_folder_id: Arc::new(RwLock::new(None)),
@@ -400,7 +419,12 @@ impl GoogleDriveProvider {
         self.flush_sessions_if_due().await;
     }
 
-    async fn cached_session(&self, key: &str, checksum: &str, total_bytes: u64) -> Option<UploadSession> {
+    async fn cached_session(
+        &self,
+        key: &str,
+        checksum: &str,
+        total_bytes: u64,
+    ) -> Option<UploadSession> {
         let sessions = self.upload_sessions.read().await;
         sessions.get(key).cloned().filter(|session| {
             session.checksum == checksum
@@ -459,18 +483,19 @@ impl GoogleDriveProvider {
         &self,
         token: &str,
         key: &str,
-        data: &[u8],
-        checksum: &ChunkChecksum,
-        disk_id: Uuid,
-        chunk_index: u64,
+        chunk: &ChunkUpload<'_>,
         session: Option<UploadSession>,
     ) -> Result<UploadResult, ProviderError> {
+        let ChunkUpload {
+            disk_id,
+            chunk_index,
+            data,
+            checksum,
+        } = chunk;
+
         if let Some(existing) = session {
             match self.probe_session(token, &existing).await {
-                Ok(SessionProbe::Complete {
-                    object_id,
-                    version,
-                }) => {
+                Ok(SessionProbe::Complete { object_id, version }) => {
                     self.drop_session(key).await;
                     return Ok(UploadResult {
                         remote_object_id: object_id,
@@ -515,7 +540,9 @@ impl GoogleDriveProvider {
 
         let init_res = self
             .client
-            .post(format!("{GDRIVE_UPLOAD_BASE}?uploadType=resumable&fields=id,version"))
+            .post(format!(
+                "{GDRIVE_UPLOAD_BASE}?uploadType=resumable&fields=id,version"
+            ))
             .header(AUTHORIZATION, format!("Bearer {token}"))
             .header(CONTENT_TYPE, "application/json; charset=UTF-8")
             .header("X-Upload-Content-Type", "application/octet-stream")
@@ -549,10 +576,10 @@ impl GoogleDriveProvider {
 
         // Persist the session *before* sending bytes: if the process dies
         // mid-upload, the next attempt can resume instead of restarting.
-        self.store_session(key.to_string(), new_session.clone()).await;
+        self.store_session(key.to_string(), new_session.clone())
+            .await;
 
-        self.send_remaining(token, key, &new_session, 0, data)
-            .await
+        self.send_remaining(token, key, &new_session, 0, data).await
     }
 
     async fn send_remaining(
@@ -742,7 +769,9 @@ impl CloudStorageProvider for GoogleDriveProvider {
         }
 
         let about: AboutResponse = res.json().await.map_err(|e| {
-            ProviderError::Internal(format!("Google Drive returned an invalid about response: {e}"))
+            ProviderError::Internal(format!(
+                "Google Drive returned an invalid about response: {e}"
+            ))
         })?;
 
         if about.user.is_some() {
@@ -796,7 +825,9 @@ impl CloudStorageProvider for GoogleDriveProvider {
         })?;
 
         let total: u64 = limit.parse().map_err(|e| {
-            ProviderError::Internal(format!("Google Drive returned an invalid quota '{limit}': {e}"))
+            ProviderError::Internal(format!(
+                "Google Drive returned an invalid quota '{limit}': {e}"
+            ))
         })?;
 
         let used: u64 = match about.storage_quota.usage.as_deref() {
@@ -852,10 +883,12 @@ impl CloudStorageProvider for GoogleDriveProvider {
         self.upload_chunk_via_session(
             &token,
             &key,
-            data,
-            checksum,
-            disk_id,
-            chunk_index,
+            &ChunkUpload {
+                disk_id,
+                chunk_index,
+                data,
+                checksum,
+            },
             existing,
         )
         .await
@@ -871,10 +904,10 @@ impl CloudStorageProvider for GoogleDriveProvider {
         let token = self.get_access_token().await?;
         let mut url = reqwest::Url::parse(&format!("{GDRIVE_API_BASE}/files/{remote_object_id}"))
             .map_err(|e| {
-                ProviderError::Internal(format!(
-                    "Invalid Google Drive object id '{remote_object_id}': {e}"
-                ))
-            })?;
+            ProviderError::Internal(format!(
+                "Invalid Google Drive object id '{remote_object_id}': {e}"
+            ))
+        })?;
         url.query_pairs_mut().append_pair("alt", "media");
 
         let res = self
@@ -913,10 +946,10 @@ impl CloudStorageProvider for GoogleDriveProvider {
         let token = self.get_access_token().await?;
         let mut url = reqwest::Url::parse(&format!("{GDRIVE_API_BASE}/files/{remote_object_id}"))
             .map_err(|e| {
-                ProviderError::Internal(format!(
-                    "Invalid Google Drive object id '{remote_object_id}': {e}"
-                ))
-            })?;
+            ProviderError::Internal(format!(
+                "Invalid Google Drive object id '{remote_object_id}': {e}"
+            ))
+        })?;
         url.query_pairs_mut().append_pair("fields", "id");
 
         let res = self
@@ -939,8 +972,8 @@ impl CloudStorageProvider for GoogleDriveProvider {
 
     async fn publish_manifest(&self, manifest: &DiskManifest) -> Result<(), ProviderError> {
         let token = self.get_access_token().await?;
-        let serialized = serde_json::to_vec(manifest)
-            .map_err(|e| ProviderError::Internal(e.to_string()))?;
+        let serialized =
+            serde_json::to_vec(manifest).map_err(|e| ProviderError::Internal(e.to_string()))?;
 
         if serialized.is_empty() {
             return Err(ProviderError::Internal(
@@ -1019,7 +1052,9 @@ impl CloudStorageProvider for GoogleDriveProvider {
 
         let init_res = self
             .client
-            .post(format!("{GDRIVE_UPLOAD_BASE}?uploadType=resumable&fields=id,name"))
+            .post(format!(
+                "{GDRIVE_UPLOAD_BASE}?uploadType=resumable&fields=id,name"
+            ))
             .header(AUTHORIZATION, format!("Bearer {token}"))
             .header(CONTENT_TYPE, "application/json; charset=UTF-8")
             .header("X-Upload-Content-Type", "application/json")
@@ -1111,9 +1146,8 @@ impl CloudStorageProvider for GoogleDriveProvider {
             ProviderError::NotFound(format!("Manifest for disk {disk_id} not found"))
         })?;
 
-        let mut download_url =
-            reqwest::Url::parse(&format!("{GDRIVE_API_BASE}/files/{}", file.id))
-                .map_err(|e| ProviderError::Internal(e.to_string()))?;
+        let mut download_url = reqwest::Url::parse(&format!("{GDRIVE_API_BASE}/files/{}", file.id))
+            .map_err(|e| ProviderError::Internal(e.to_string()))?;
         download_url.query_pairs_mut().append_pair("alt", "media");
 
         let download_res = self
@@ -1249,8 +1283,7 @@ mod tests {
 
     #[test]
     fn completed_upload_requires_real_object_id_and_version() {
-        let (id, version) =
-            parse_completed_upload(r#"{"id":"file-1","version":"7"}"#).unwrap();
+        let (id, version) = parse_completed_upload(r#"{"id":"file-1","version":"7"}"#).unwrap();
         assert_eq!(id, "file-1");
         assert_eq!(version, 7);
 
@@ -1299,7 +1332,10 @@ mod tests {
 
         assert_eq!(loaded.len(), 1);
         let restored = loaded.get("disk:1").expect("session must survive");
-        assert_eq!(restored.session_uri, "https://example.invalid/upload/session");
+        assert_eq!(
+            restored.session_uri,
+            "https://example.invalid/upload/session"
+        );
         assert_eq!(restored.checksum, "abc123");
         assert_eq!(restored.total_bytes, 42);
     }

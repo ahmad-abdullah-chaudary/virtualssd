@@ -17,7 +17,7 @@ use windows::Win32::Foundation::{
     WIN32_ERROR,
 };
 use windows::Win32::Security::{
-    GetTokenInformation, PSECURITY_DESCRIPTOR, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
+    GetTokenInformation, TokenElevation, PSECURITY_DESCRIPTOR, TOKEN_ELEVATION, TOKEN_QUERY,
 };
 use windows::Win32::Storage::FileSystem::GetLogicalDrives;
 use windows::Win32::Storage::Vhd::{
@@ -26,10 +26,9 @@ use windows::Win32::Storage::Vhd::{
     ATTACH_VIRTUAL_DISK_FLAG_PERMANENT_LIFETIME, CREATE_VIRTUAL_DISK_FLAG_NONE,
     CREATE_VIRTUAL_DISK_PARAMETERS, CREATE_VIRTUAL_DISK_PARAMETERS_0,
     CREATE_VIRTUAL_DISK_PARAMETERS_0_1, CREATE_VIRTUAL_DISK_VERSION_2,
-    DETACH_VIRTUAL_DISK_FLAG_NONE, OPEN_VIRTUAL_DISK_FLAG_NONE,
-    VIRTUAL_DISK_ACCESS_ATTACH_RW, VIRTUAL_DISK_ACCESS_DETACH, VIRTUAL_DISK_ACCESS_GET_INFO,
-    VIRTUAL_DISK_ACCESS_NONE, VIRTUAL_STORAGE_TYPE, VIRTUAL_STORAGE_TYPE_DEVICE_VHDX,
-    VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT,
+    DETACH_VIRTUAL_DISK_FLAG_NONE, OPEN_VIRTUAL_DISK_FLAG_NONE, VIRTUAL_DISK_ACCESS_ATTACH_RW,
+    VIRTUAL_DISK_ACCESS_DETACH, VIRTUAL_DISK_ACCESS_GET_INFO, VIRTUAL_DISK_ACCESS_NONE,
+    VIRTUAL_STORAGE_TYPE, VIRTUAL_STORAGE_TYPE_DEVICE_VHDX, VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -181,8 +180,8 @@ pub fn attach_vhdx(image_path: &Path) -> Result<AttachedDiskInfo, String> {
         return Err(describe_error("OpenVirtualDisk", result));
     }
 
-    let attach_flags = ATTACH_VIRTUAL_DISK_FLAG_NO_DRIVE_LETTER
-        | ATTACH_VIRTUAL_DISK_FLAG_PERMANENT_LIFETIME;
+    let attach_flags =
+        ATTACH_VIRTUAL_DISK_FLAG_NO_DRIVE_LETTER | ATTACH_VIRTUAL_DISK_FLAG_PERMANENT_LIFETIME;
     let result = unsafe {
         AttachVirtualDisk(
             handle,
@@ -333,7 +332,9 @@ pub fn format_volume(
         .filter(|line| line.len() == 1)
         .and_then(|line| line.chars().next())
         .map(|c| c.to_ascii_uppercase())
-        .ok_or_else(|| format!("Windows did not report a drive letter after formatting: {output}"))?;
+        .ok_or_else(|| {
+            format!("Windows did not report a drive letter after formatting: {output}")
+        })?;
 
     if !assigned.is_ascii_uppercase() {
         return Err(format!(
@@ -359,17 +360,13 @@ fn vhdx_storage_type() -> VIRTUAL_STORAGE_TYPE {
 unsafe fn physical_path_for_handle(handle: HANDLE) -> Result<String, WIN32_ERROR> {
     let mut buffer = [0u16; 512];
     let mut size_bytes = (buffer.len() * std::mem::size_of::<u16>()) as u32;
-    let result = unsafe {
-        GetVirtualDiskPhysicalPath(handle, &mut size_bytes, PWSTR(buffer.as_mut_ptr()))
-    };
+    let result =
+        unsafe { GetVirtualDiskPhysicalPath(handle, &mut size_bytes, PWSTR(buffer.as_mut_ptr())) };
     if result != ERROR_SUCCESS {
         return Err(result);
     }
 
-    let len = buffer
-        .iter()
-        .position(|&c| c == 0)
-        .unwrap_or(buffer.len());
+    let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
     Ok(String::from_utf16_lossy(&buffer[..len]))
 }
 
@@ -413,8 +410,10 @@ pub fn choose_available_drive_letter() -> Result<char, String> {
         return Err("Windows could not enumerate logical drives.".to_string());
     }
 
-    let candidates = ['V', 'W', 'X', 'Y', 'Z', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-        'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'];
+    let candidates = [
+        'V', 'W', 'X', 'Y', 'Z', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+        'Q', 'R', 'S', 'T', 'U',
+    ];
     candidates
         .into_iter()
         .find(|letter| {
@@ -508,7 +507,9 @@ fn run_powershell(script: &str, env: &[(&str, String)]) -> Result<String, String
             Ok(None) => {
                 if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
-                    return Err("Windows volume preparation timed out after 180 seconds.".to_string());
+                    return Err(
+                        "Windows volume preparation timed out after 180 seconds.".to_string()
+                    );
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -526,9 +527,8 @@ fn encode_powershell(script: &str) -> String {
 }
 
 fn base64_encode(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = *chunk.get(1).unwrap_or(&0) as u32;

@@ -3,7 +3,7 @@
 ### Your cloud account, mounted as a real Windows disk.
 
 [![Windows 11](https://img.shields.io/badge/Windows-11%20x64-0078D6.svg?logo=windows)](https://microsoft.com)
-[![Rust 1.80+](https://img.shields.io/badge/Rust-1.98+-orange.svg?logo=rust)](https://www.rust-lang.org)
+[![Rust 1.82+](https://img.shields.io/badge/Rust-1.82+-orange.svg?logo=rust)](https://www.rust-lang.org)
 [![Tauri 2.0](https://img.shields.io/badge/Tauri-2.0-blue.svg?logo=tauri)](https://tauri.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Releases](https://img.shields.io/github/v/release/ahmad-abdullah-chaudary/virtualssd.svg)](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases)

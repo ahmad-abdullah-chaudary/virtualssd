@@ -7,9 +7,21 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # The workspace redirects Cargo's target directory to an absolute path
+  # (see .cargo/config.toml) so that Windows Defender does not scan freshly
+  # written files mid-build. On CI that path would land outside the
+  # checkout, so the target directory is moved back inside the workspace.
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
 jobs:
   rust:
@@ -23,9 +35,8 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "C:\\cargo-build -> target"
+      - name: Cache the Cargo build directory
+        uses: Swatinem/rust-cache@v2
 
       - name: Check every target
         run: cargo check --workspace --all-targets
@@ -48,15 +59,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      # pnpm must be on the PATH before setup-node runs, because setup-node
+      # calls `pnpm store path` to locate the package cache.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -77,19 +92,20 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "C:\\cargo-build -> target"
+      - name: Cache the Cargo build directory
+        uses: Swatinem/rust-cache@v2
 
-      - uses: actions/setup-node@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -103,7 +119,7 @@ jobs:
         with:
           name: virtualssd-windows
           path: |
-            C:\cargo-build\release\bundle\msi\*.msi
-            C:\cargo-build\release\bundle\nsis\*.exe
-            C:\cargo-build\release\virtualssd-desktop.exe
+            target/release/bundle/msi/*.msi
+            target/release/bundle/nsis/*.exe
+            target/release/virtualssd-desktop.exe
           if-no-files-found: error

@@ -120,7 +120,7 @@ pub fn import_key_hex(disk_dir: &Path, value: &str) -> Result<(), CryptoError> {
     let key = decode_key(&bytes)?;
 
     if let Some(existing) = load_key(disk_dir)? {
-        if existing.as_ref() != &key {
+        if existing.as_ref() != key {
             return Err(CryptoError::InvalidKey(
                 "a different encryption key is already installed for this disk".into(),
             ));
@@ -142,7 +142,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn hex_decode(value: &str) -> Result<Vec<u8>, CryptoError> {
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return Err(CryptoError::InvalidKey(
             "recovery key must contain an even number of hexadecimal characters".into(),
         ));

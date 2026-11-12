@@ -17,6 +17,9 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+# The workspace uses `u64::div_ceil` (Rust 1.73) and `Option::is_none_or`
+# (Rust 1.82), so 1.82 is the true minimum supported version.
+rust-version = "1.82"
 authors = ["Chaudary Global <info@chaudaryglobal.com>"]
 license = "MIT"
 repository = "https://github.com/ahmad-abdullah-chaudary/virtualssd"
