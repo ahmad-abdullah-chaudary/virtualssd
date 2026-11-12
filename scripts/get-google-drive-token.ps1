@@ -33,6 +33,18 @@ function Write-Head($text) {
     Write-Host "== $text" -ForegroundColor Cyan
 }
 
+# Google requires TLS 1.2. Some older Windows builds still negotiate TLS 1.0
+# by default, which Google refuses, and the failure looks like a generic
+# connection error rather than a protocol problem. Enabling it explicitly
+# costs nothing on a modern system.
+try {
+    [Net.ServicePointManager]::SecurityProtocol = `
+        [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch {
+    # A locked down system may forbid this. The request below will report a
+    # clear error if TLS 1.2 is genuinely unavailable.
+}
+
 function Get-RandomBase64Url([int]$bytes) {
     $buffer = New-Object byte[] $bytes
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -159,7 +171,38 @@ if ($ClientSecret) {
 try {
     $response = Invoke-RestMethod -Method Post -Uri "https://oauth2.googleapis.com/token" -Body $tokenParams -TimeoutSec 60
 } catch {
-    $detail = $_.ErrorDetails.Message
+    # Windows PowerShell 5.1 leaves ErrorDetails.Message empty for a failed
+    # Invoke-RestMethod, so the useful text - Google's error_description - has
+    # to be read out of the response stream. Without this the script would
+    # report only "The remote server returned an error: (401) Unauthorized"
+    # and hide the reason, which is usually "redirect_uri_mismatch" or
+    # "invalid_grant".
+    $detail = ""
+    $webResponse = $_.Exception.Response
+    if ($webResponse) {
+        try {
+            $stream = $webResponse.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($stream)
+            $body = $reader.ReadToEnd()
+            $reader.Dispose()
+            if ($body) {
+                try {
+                    $parsed = $body | ConvertFrom-Json
+                    if ($parsed.error_description) {
+                        $detail = "$($parsed.error): $($parsed.error_description)"
+                    } elseif ($parsed.error) {
+                        $detail = $parsed.error
+                    } else {
+                        $detail = $body
+                    }
+                } catch {
+                    $detail = $body
+                }
+            }
+        } catch {
+            $detail = ""
+        }
+    }
     if (-not $detail) { $detail = $_.Exception.Message }
     throw "The token exchange failed: $detail"
 }
