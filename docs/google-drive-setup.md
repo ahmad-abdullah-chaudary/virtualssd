@@ -107,10 +107,10 @@ redirect goes to `http://localhost:8765/`, which the script is listening on.
 
 1. Open **Cloud Providers** in VirtualSSD.
 2. Under **Connect Google Drive**, fill in:
-   - **Display name** — anything, for example `Personal Google Drive`.
+   - **Display Name** — anything, for example `Personal Google Drive`.
    - **OAuth2 Client ID** — the client id from step 1.
    - **OAuth2 Refresh Token** — the refresh token from step 2.
-3. Click **Connect**.
+3. Click **Authenticate & Save Provider**.
 
 The application verifies the credentials against the Drive API before storing
 them. If verification succeeds, the credentials are encrypted with **Windows
