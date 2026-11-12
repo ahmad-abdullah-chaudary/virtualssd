@@ -1,3 +1,9 @@
+<div align="center">
+  <img src="logo.png" alt="VirtualSSD logo" width="128" height="128" />
+</div>
+
+<div align="center">
+
 # VirtualSSD
 
 ### Your cloud account, mounted as a real Windows disk.
@@ -7,6 +13,8 @@
 [![Tauri 2.0](https://img.shields.io/badge/Tauri-2.0-blue.svg?logo=tauri)](https://tauri.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Releases](https://img.shields.io/github/v/release/ahmad-abdullah-chaudary/virtualssd.svg)](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases)
+
+</div>
 
 **VirtualSSD turns the storage you already pay for into a Windows block device.**
 
@@ -29,15 +37,18 @@ who need it.*
 
 </div>
 
-| | |
-|---|---|
-| **Company** | Chaudary Global |
-| **Developer** | Ahmad Abdullah Chaudary |
-| **Country** | PK |
-| **Version** | 1.0.0 — the build number changes with every build (`1.0.0+N`) |
-| **License** | MIT |
-| **Downloads** | [github.com/ahmad-abdullah-chaudary/virtualssd/releases](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases) |
-| **Issues** | [Report a bug or ask a question](https://github.com/ahmad-abdullah-chaudary/virtualssd/issues) |
+<div align="center">
+
+**Company** Chaudary Global &nbsp;·&nbsp;
+**Developer** Ahmad Abdullah Chaudary &nbsp;·&nbsp;
+**Country** PK &nbsp;·&nbsp;
+**Version** 1.0.0 (the build number changes with every build) &nbsp;·&nbsp;
+**License** MIT &nbsp;·&nbsp;
+[**Releases**](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases) &nbsp;·&nbsp;
+[**Issues**](https://github.com/ahmad-abdullah-chaudary/virtualssd/issues)
+
+</div>
+
 
 ---
 
