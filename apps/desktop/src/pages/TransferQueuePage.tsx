@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
-import { AlertTriangle, CheckCircle2, Cloud, HardDrive, Lock, RefreshCw, Unlock } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Cloud, HardDrive, Lock, RefreshCw, Unlock, Zap } from 'lucide-react';
 import { DiskTelemetry } from '../types';
 
 interface TransferQueuePageProps {
   disks: DiskTelemetry[];
   onSync: (diskId: string) => void;
+  /** Mirrors a disk that is still mounted, through a volume shadow copy. */
+  onSyncLive: (diskId: string) => void;
+  /** Whether the application is running with administrator privileges. */
+  elevated?: boolean | null;
 }
 
 function fmtBytes(b: number) {
@@ -14,7 +18,12 @@ function fmtBytes(b: number) {
   return `${parseFloat((b / k ** i).toFixed(1))} ${s[i]}`;
 }
 
-export const TransferQueuePage: React.FC<TransferQueuePageProps> = ({ disks, onSync }) => {
+export const TransferQueuePage: React.FC<TransferQueuePageProps> = ({
+  disks,
+  onSync,
+  onSyncLive,
+  elevated,
+}) => {
   const [syncingId, setSyncingId] = useState<string | null>(null);
 
   const totalMirrored = disks.reduce((s, d) => s + d.mirrored_chunks, 0);
@@ -28,6 +37,13 @@ export const TransferQueuePage: React.FC<TransferQueuePageProps> = ({ disks, onS
     setTimeout(() => setSyncingId(null), 1500);
   };
 
+  const handleLiveSync = (id: string) => {
+    setSyncingId(id);
+    onSyncLive(id);
+    // The live mirror keeps the volume mounted, so it can take longer.
+    setTimeout(() => setSyncingId(null), 3000);
+  };
+
   return (
     <div className="w-full flex flex-col gap-5 select-none animate-fade-in pb-4">
       {/* ── Headline ──────────────────────────────────────────────── */}
@@ -36,7 +52,8 @@ export const TransferQueuePage: React.FC<TransferQueuePageProps> = ({ disks, onS
           Snapshot Mirror &amp; Sync
         </h1>
         <p className="text-xs sm:text-sm font-medium text-zinc-500 mt-2">
-          Unmounted VHDX snapshot chunks, per-disk mirror status, and manual cloud publication
+          VHDX snapshot chunks, per-disk mirror status, and cloud publication — with or without
+          unmounting
         </p>
       </div>
 
@@ -89,7 +106,7 @@ export const TransferQueuePage: React.FC<TransferQueuePageProps> = ({ disks, onS
               {onlineDisks.length} / {disks.length}
             </span>
             <span className="bg-[#d4f938] text-black font-extrabold text-[10px] px-2 py-0.5 rounded-full">
-              {disks.length === 0 ? 'No volumes' : onlineDisks.length > 0 ? 'Unmount to mirror' : 'Ready to mirror'}
+              {disks.length === 0 ? 'No volumes' : onlineDisks.length > 0 ? 'Can mirror while mounted' : 'Ready to mirror'}
             </span>
           </div>
         </div>
@@ -100,12 +117,14 @@ export const TransferQueuePage: React.FC<TransferQueuePageProps> = ({ disks, onS
         <div className="flex flex-col gap-1 max-w-2xl">
           <span className="text-[11px] font-bold text-[#d4f938] uppercase tracking-wider">Mirroring Model</span>
           <h4 className="text-base font-extrabold tracking-tight">
-            Manual, unmounted-only VHDX snapshot mirroring
+            VHDX snapshot mirroring, with or without unmounting
           </h4>
           <p className="text-xs text-zinc-400 leading-relaxed">
             Changed non-zero 4 MiB chunks are uploaded, then the manifest is published last. All-zero
-            regions are omitted. Engine cache dirty chunks are a separate namespace and are not
-            uploaded by this snapshot sync. Throughput and ETA are not measured.
+            regions are omitted. An unmounted disk is mirrored straight from its file; a mounted disk
+            is mirrored from a volume shadow copy, so it stays usable during the transfer. Engine
+            cache dirty chunks are a separate namespace and are not uploaded by this snapshot sync.
+            Throughput and ETA are not measured.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -159,21 +178,37 @@ export const TransferQueuePage: React.FC<TransferQueuePageProps> = ({ disks, onS
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className={`px-3 py-1 text-xs font-bold rounded-full ${
                     isOnline ? 'bg-amber-50 text-amber-800' : 'bg-zinc-100 text-zinc-700'
                   }`}>
                     {isOnline ? 'Mounted' : disk.status}
                   </span>
-                  <button
-                    onClick={() => handleSync(disk.disk_id)}
-                    disabled={isSyncing || isOnline}
-                    title={isOnline ? 'Unmount the disk before mirroring its VHDX snapshot' : 'Mirror the local VHDX snapshot'}
-                    className="bg-white border border-black/[0.08] hover:bg-zinc-50 text-zinc-800 font-semibold text-xs px-4 py-2 rounded-full transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                    {isSyncing ? 'Mirroring…' : isOnline ? 'Unmount to mirror' : 'Mirror Snapshot'}
-                  </button>
+                  {isOnline ? (
+                    <button
+                      onClick={() => handleLiveSync(disk.disk_id)}
+                      disabled={isSyncing || !elevated}
+                      title={
+                        elevated
+                          ? 'Mirror the mounted disk through a volume shadow copy. The volume stays usable during the transfer.'
+                          : 'Mirroring a mounted disk uses a volume shadow copy, which requires administrator privileges.'
+                      }
+                      className="bg-[#18191d] hover:bg-black text-white font-semibold text-xs px-4 py-2 rounded-full transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Zap className={`w-3.5 h-3.5 text-[#d4f938] ${isSyncing ? 'animate-pulse' : ''}`} />
+                      {isSyncing ? 'Mirroring…' : 'Mirror While Mounted'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleSync(disk.disk_id)}
+                      disabled={isSyncing}
+                      title="Mirror the local VHDX snapshot"
+                      className="bg-white border border-black/[0.08] hover:bg-zinc-50 text-zinc-800 font-semibold text-xs px-4 py-2 rounded-full transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                      {isSyncing ? 'Mirroring…' : 'Mirror Snapshot'}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -197,7 +232,12 @@ export const TransferQueuePage: React.FC<TransferQueuePageProps> = ({ disks, onS
               {isOnline && (
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-2">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>The disk is mounted. Unmount it before mirroring so the snapshot is consistent.</span>
+                  <span>
+                    The disk is mounted. Use <strong>Mirror While Mounted</strong> to mirror it
+                    through a volume shadow copy without unmounting, or unmount it and use
+                    <strong> Mirror Snapshot</strong>. The shadow copy path needs administrator
+                    privileges.
+                  </span>
                 </div>
               )}
 

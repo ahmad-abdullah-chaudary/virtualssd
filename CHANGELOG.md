@@ -12,6 +12,15 @@ identifiable — for example `1.0.0+42`.
 ## [Unreleased]
 
 ### Added
+- **Volume Shadow Copy mirroring.** A mounted disk can now be mirrored
+  without being unmounted. *Mirror While Mounted* takes a volume shadow copy
+  of the volume that holds the VHDX, flushes the guest file system into the
+  VHDX first with `FSCTL_FLUSH_VOLUME`, and mirrors the shadow copy with the
+  existing chunk pipeline. The volume stays mounted and usable for the whole
+  transfer. This is a documented Windows API — no kernel driver, no EV
+  certificate, and no WHQL attestation. It requires administrator
+  privileges, and the unmounted mirror path is unchanged and remains the
+  fallback.
 - Real backend engine log stream. The Diagnostics page renders actual
   `tracing` events from the Rust backend and the shared provider/storage
   crates, delivered live over a Tauri event and backed by a bounded
@@ -47,7 +56,6 @@ identifiable — for example `1.0.0+42`.
   being rewritten after every chunk.
 - **Tuned HTTP clients.** `tcp_nodelay`, a warm idle connection pool, and a
   connect timeout separated from the request timeout.
-
 ### Changed
 - The Dashboard sidebar badge shows the real number of known disks and is
   hidden when there are none. The previous hardcoded fallback value was

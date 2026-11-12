@@ -25,6 +25,7 @@ use virtualssd_manifest::{ChunkDescriptor, DiskManifest, ManifestError};
 use virtualssd_provider_contract::{CloudStorageProvider, ProviderError};
 
 pub mod transfer;
+pub mod vss;
 use transfer::{
     checkpoint_manifest, AbortFlag, ChunkOutcome, ChunkProducer, ChunkWork, SnapshotLayout,
     TransferCounters, UploadContext, MANIFEST_CHECKPOINT_INTERVAL,
@@ -64,6 +65,9 @@ pub enum StorageEngineError {
 
     #[error("The disk is mounted. Dismount it before syncing so the VHDX snapshot is consistent.")]
     DiskMounted,
+
+    #[error("The disk is not mounted. Mount it before mirroring it while it is in use.")]
+    DiskNotMounted,
 
     #[error("This disk has no cloud provider bound to it")]
     NoProvider,
@@ -451,11 +455,6 @@ impl VirtualDiskEngine {
             return Err(StorageEngineError::DiskMounted);
         }
 
-        let provider = self
-            .provider
-            .clone()
-            .ok_or(StorageEngineError::NoProvider)?;
-
         let vhdx_path = self.vhdx_path();
         if !vhdx_path.exists() {
             if self.manifest.read().vhdx_chunks.is_empty() {
@@ -463,6 +462,88 @@ impl VirtualDiskEngine {
             }
             self.restore_vhdx_from_remote().await?;
         }
+
+        self.mirror_vhdx_source(&vhdx_path).await
+    }
+
+    /// Mirrors the VHDX of a *mounted* disk using a Volume Shadow Copy.
+    ///
+    /// The disk stays mounted and usable while the mirror runs: the VSS
+    /// service takes a point-in-time image of the volume that holds the VHDX
+    /// and the transfer reads that image instead of the live file.
+    ///
+    /// This is what turns VirtualSSD from a backup tool into a persistent
+    /// drive. It requires administrator privileges, because creating a volume
+    /// shadow copy does.
+    pub async fn sync_vhdx_snapshot_live(&self) -> Result<MirrorReport, StorageEngineError> {
+        if *self.status.read() != DiskStatus::Online {
+            return Err(StorageEngineError::DiskNotMounted);
+        }
+
+        let vhdx_path = self.vhdx_path();
+        if !vhdx_path.exists() {
+            return Err(StorageEngineError::NoVhdxSnapshot);
+        }
+
+        // Flush the guest file system into the VHDX so the snapshot contains
+        // the newest data the guest has written.
+        if let Some(letter) = self.drive_letter.read().clone() {
+            match windows_vhd::flush_volume(&letter) {
+                Ok(()) => tracing::info!(
+                    "Flushed the guest file system on {letter} into the VHDX before snapshotting"
+                ),
+                Err(e) => {
+                    tracing::warn!(
+                        "The guest file system on {letter} could not be flushed before the snapshot: {e}"
+                    );
+                }
+            }
+        }
+
+        // Take the snapshot. It is released when this scope ends, whether the
+        // mirror succeeded or failed.
+        let snapshot = vss::VolumeSnapshot::capture_for_file(&vhdx_path).map_err(|e| {
+            StorageEngineError::WindowsDevice(format!(
+                "A volume shadow copy of the mounted disk could not be taken: {e}"
+            ))
+        })?;
+
+        let shadowed = snapshot.shadowed_path(&vhdx_path).map_err(|e| {
+            StorageEngineError::WindowsDevice(format!(
+                "The mounted disk could not be located inside its volume shadow copy: {e}"
+            ))
+        })?;
+
+        tracing::info!(
+            "Mirroring the mounted disk from volume shadow copy {} ({})",
+            snapshot.snapshot_id(),
+            snapshot.device_path()
+        );
+
+        let result = self.mirror_vhdx_source(&shadowed).await;
+
+        // The snapshot is released here, before the result is returned, so the
+        // differential area does not linger on the volume.
+        drop(snapshot);
+
+        result
+    }
+
+    /// Mirrors a VHDX file from an arbitrary location.
+    ///
+    /// The location may be the live file or a copy inside a volume shadow
+    /// copy. Everything else — chunking, hashing, encryption, the concurrent
+    /// transfer, and the manifest — is identical.
+    async fn mirror_vhdx_source(
+        &self,
+        source: &std::path::Path,
+    ) -> Result<MirrorReport, StorageEngineError> {
+        let provider = self
+            .provider
+            .clone()
+            .ok_or(StorageEngineError::NoProvider)?;
+
+        let vhdx_path = source.to_path_buf();
 
         let (disk_id, chunk_size, encrypt_chunks) = {
             let manifest = self.manifest.read();

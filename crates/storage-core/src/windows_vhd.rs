@@ -382,6 +382,83 @@ fn parse_disk_number(device_path: &str) -> Option<u32> {
     digits.parse().ok()
 }
 
+/// `FSCTL_FLUSH_VOLUME`.
+///
+/// The Windows SDK defines this as
+/// `CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 25, METHOD_BUFFERED, FILE_ANY_ACCESS)`,
+/// which is `0x000A0064`. The `windows` crate does not expose it, so it is
+/// defined here.
+const FSCTL_FLUSH_VOLUME: u32 = 0x000A_0064;
+
+/// Flushes the guest file system on a mounted volume down into the virtual
+/// disk.
+///
+/// This is what makes a volume shadow copy of a *mounted* VHDX as fresh as
+/// possible: NTFS writes everything the guest has committed out to the
+/// virtual disk, and the VSS writer then flushes the file system cache
+/// before the image is taken.
+///
+/// A failure is returned rather than swallowed. It is not fatal — the
+/// snapshot can still be taken — but the caller has to know that the copy
+/// might be slightly behind the live volume.
+pub fn flush_volume(drive_letter: &str) -> Result<(), String> {
+    use windows::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+
+    let letter = drive_letter.trim().trim_end_matches(':');
+    if letter.len() != 1 || !letter.chars().all(|c| c.is_ascii_alphabetic()) {
+        return Err(format!("Invalid drive letter '{drive_letter}'"));
+    }
+
+    let path = format!("\\\\.\\{letter}:");
+    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+
+    unsafe {
+        // GENERIC_READ | GENERIC_WRITE.
+        const ACCESS: u32 = 0x8000_0000 | 0x4000_0000;
+
+        let handle = CreateFileW(
+            windows::core::PCWSTR(wide.as_ptr()),
+            ACCESS,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            None,
+        )
+        .map_err(|e| format!("The volume {letter}: could not be opened for flushing: {e}"))?;
+
+        let _guard = OwnedHandle(handle);
+
+        let mut returned = 0u32;
+        windows::Win32::System::IO::DeviceIoControl(
+            handle,
+            FSCTL_FLUSH_VOLUME,
+            None,
+            0,
+            None,
+            0,
+            Some(&mut returned),
+            None,
+        )
+        .map_err(|e| format!("The volume {letter}: could not be flushed: {e}"))?;
+    }
+
+    Ok(())
+}
+
+/// A Windows handle that is closed when it goes out of scope.
+struct OwnedHandle(windows::Win32::Foundation::HANDLE);
+
+impl Drop for OwnedHandle {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = windows::Win32::Foundation::CloseHandle(self.0);
+        }
+    }
+}
+
 /// Validates and normalizes a drive letter. The system drive, letters in use,
 /// and non A-Z input are rejected.
 pub fn validate_drive_letter(letter: char) -> Result<char, String> {

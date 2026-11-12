@@ -271,6 +271,12 @@ async function callTauri<T>(cmd: string, args?: Record<string, unknown>): Promis
     );
   }
 
+  if (cmd === 'sync_disk_live') {
+    throw new Error(
+      'Browser preview cannot create a volume shadow copy. Run the desktop application as administrator.'
+    );
+  }
+
   if (cmd === 'delete_disk') {
     const { diskId } = args as { diskId: string };
     saveLocalDisks(getLocalDisks().filter((d) => d.disk_id !== diskId));
@@ -451,6 +457,34 @@ export const App: React.FC = () => {
           ? `${msg} Use "Restart as administrator" on the Settings page.`
           : `Mount/unmount failed: ${msg}`
       );
+    }
+  };
+
+  const handleSyncLive = async (diskId: string) => {
+    setIsSyncing(true);
+    try {
+      const report = await callTauri<SyncDiskReport>('sync_disk_live', { diskId });
+      const mirror = report.mirror;
+      const summary =
+        `Mirrored the mounted disk (${formatBytesShort(mirror.file_size_bytes)}) in ` +
+        `${mirror.uploaded_chunks} uploaded / ${mirror.deleted_chunks} deleted / ` +
+        `${mirror.skipped_chunks} unchanged chunks`;
+
+      setNotification({
+        text: `${summary}. The volume stayed mounted and usable throughout.`,
+        type: mirror.warnings.length > 0 ? 'info' : 'success',
+      });
+      setTimeout(() => setNotification(null), 8000);
+      await loadData();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(
+        msg.toLowerCase().includes('administrator')
+          ? `${msg} Use "Restart as administrator" on the Settings page.`
+          : `Live mirror failed: ${msg}`
+      );
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -841,11 +875,13 @@ export const App: React.FC = () => {
                     disks={disks}
                     onMountToggle={handleMountToggle}
                     onSync={handleSync}
+                    onSyncLive={handleSyncLive}
                     onDelete={handleDelete}
                     onVerify={handleVerify}
                     onExportKey={handleExportKey}
                     onImportKey={handleImportKey}
                     onOpenCreateModal={() => setIsCreateModalOpen(true)}
+                    elevated={elevated}
                   />
                 )}
                 {activeTab === 'providers'   && <ProvidersPage
@@ -858,7 +894,7 @@ export const App: React.FC = () => {
                   onImportDisk={handleImportDisk}
                 />}
                 {activeTab === 'cache'       && <CachePage disks={disks} stats={stats} />}
-                {activeTab === 'transfers'   && <TransferQueuePage disks={disks} onSync={handleSync} />}
+                {activeTab === 'transfers'   && <TransferQueuePage disks={disks} onSync={handleSync} onSyncLive={handleSyncLive} elevated={elevated} />}
                 {activeTab === 'integrity'   && <IntegrityPage disks={disks} onVerify={handleVerify} />}
                 {activeTab === 'journal'     && <RecoveryPage />}
                 {activeTab === 'recovery'    && <RecoveryPage />}

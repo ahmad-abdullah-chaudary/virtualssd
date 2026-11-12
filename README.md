@@ -86,6 +86,9 @@ for a build, a database, or a video project — that is what this is.
 - **A portable scratch disk.** Create a volume, mount it, install your tool
   chain, unmount, and the whole thing is mirrored to your Drive. Pick it up
   on the laptop. The files are already there.
+- **A disk that stays usable while it backs up.** *Mirror While Mounted*
+  takes a Volume Shadow Copy of the volume and mirrors that image, so the
+  volume keeps working and stays mounted for the whole transfer.
 - **A private encrypted volume.** Per-disk AES-256-GCM with a random 256-bit
   key protected by Windows DPAPI. Export a 64-character recovery key and
   import it on another machine. The provider only ever sees ciphertext.
@@ -138,13 +141,22 @@ exactly what is implemented and what is next.
       └───────────────┘                  └──────────────────┘
 ```
 
-**The mirror is a snapshot, and it is honest about that.** When you unmount
-the disk and press **Mirror Snapshot**, VirtualSSD reads the VHDX file, splits
-it into 4 MiB chunks, hashes each one with BLAKE3, encrypts it if the disk is
-encrypted, and uploads it to your provider under a dedicated namespace. All
-zero regions are skipped entirely — a sparse volume does not cost storage for
-the holes. The manifest is published last, so a published manifest always
-describes a complete snapshot.
+**The mirror is a snapshot, and it is honest about that.** When you press
+**Mirror Snapshot**, VirtualSSD reads the VHDX file, splits it into 4 MiB
+chunks, hashes each one with BLAKE3, encrypts it if the disk is encrypted,
+and uploads it to your provider under a dedicated namespace. All zero regions
+are skipped entirely — a sparse volume does not cost storage for the holes.
+The manifest is published last, so a published manifest always describes a
+complete snapshot.
+
+**A mounted disk does not have to be unmounted.** *Mirror While Mounted*
+takes a **Volume Shadow Copy** of the volume that holds the VHDX and mirrors
+that image, so the volume stays mounted and usable for the whole transfer.
+The guest file system is flushed into the VHDX first with
+`FSCTL_FLUSH_VOLUME`, and the VSS service flushes the file system cache
+before it images the volume, so the copy is a faithful point-in-time image.
+This is a documented Windows API — no kernel driver, no EV certificate, no
+WHQL attestation.
 
 **Restore is verified, not trusted.** On a fresh machine you import the
 manifest by disk UUID, VirtualSSD rebinds it to your local provider, and the
@@ -366,10 +378,11 @@ More in [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Known limitations
 
-- **Mirroring is point-in-time and requires the disk to be unmounted.**
-  Windows I/O is not intercepted, so there is no live write-through. The fix
-  is VSS-based snapshotting, which needs no kernel driver — it is the top
-  item on the roadmap.
+- **Mirroring is on demand, not continuous.** A change is mirrored when you
+  ask for it, not the instant it is written. **The disk does not have to be
+  unmounted**: *Mirror While Mounted* takes a Volume Shadow Copy of the volume
+  and mirrors that image while the volume stays usable. A background timer
+  that mirrors automatically is not implemented yet.
 - **Encryption is fixed at disk creation.** Converting an existing
   unencrypted disk means re-uploading a new snapshot.
 - **No background auto-sync.** Sync and audits are manual.
@@ -405,10 +418,10 @@ open a pull request.
 - [x] Client-side AES-256-GCM encryption with DPAPI-protected keys
 - [x] Verified restore, remote import, and remote deletion
 - [x] Concurrent transfer pipeline with bounded concurrency
+- [x] **Volume Shadow Copy mirroring** so a mounted disk can be mirrored without unmounting
 - [x] Live backend engine log stream
 - [x] Branded application icon, system tray, and Authenticode signing
-- [ ] **VSS snapshotting** so mirroring works while the disk is mounted
-- [ ] **Background auto-mirror** on a timer or on a snapshot event
+- [ ] **Background auto-mirror** on a timer, using the same shadow-copy path
 - [ ] **Cross-process disk locking** so two instances cannot open one disk
 - [ ] **VHDX Block Allocation Table parsing** to skip unallocated regions
 - [ ] **Remote integrity scrubbing** of a sampled subset of chunks

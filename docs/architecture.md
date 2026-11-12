@@ -37,16 +37,25 @@ Disk API, while keeping the 4 MiB chunk engine and provider adapters independent
 - This device appears in Windows Device Manager under `Disk drives`, in Windows Disk Management (`diskmgmt.msc`), and in `diskpart`.
 - Windows partitions, formats with NTFS, mounts drive letters (e.g. `V:`), and handles standard kernel-mode I/O.
 - **Cloud mirroring model**: Windows I/O is not intercepted in the kernel. Instead, the
-  user unmounts the disk and triggers **Mirror Snapshot**. The backend reads the VHDX
-  file, splits it into 4 MiB chunks, skips all-zero regions, uploads changed chunks
-  under a dedicated VHDX namespace, records them in `vhdx_chunks`, and publishes the
+  user triggers a mirror and the backend reads the VHDX file, splits it into
+  4 MiB chunks, skips all-zero regions, uploads changed chunks under a
+  dedicated VHDX namespace, records them in `vhdx_chunks`, and publishes the
   manifest last. Restore downloads every referenced chunk into
   `disk.vhdx.restore.tmp`, verifies its checksum, and only then renames it to
   `disk.vhdx`. A missing local VHDX is restored automatically on mount.
-- **Remaining limitation**: mirroring is point-in-time and requires the disk to be
-  unmounted. There is no live write-through or write-back path from Windows I/O to
-  the cloud. Block-engine `chunks` and VHDX-file `vhdx_chunks` are separate manifest
-  namespaces; the desktop I/O path does not populate the block-engine namespace.
+- **Mirroring a mounted disk**: `crates/storage-core/src/vss.rs` takes a
+  Volume Shadow Copy of the volume that holds the VHDX, using the
+  `Win32_ShadowCopy` WMI class. The guest file system is flushed into the VHDX
+  with `FSCTL_FLUSH_VOLUME` first, and the VSS service flushes the file system
+  cache before it images the volume. The mirror then reads the shadow copy, so
+  the volume stays mounted and usable for the whole transfer. The shadow copy
+  is always released, so its differential area does not linger.
+  The shadow-copy path requires administrator privileges; the unmounted mirror
+  remains the fallback and is unchanged.
+- **Remaining limitation**: mirroring is still on demand. There is no
+  background auto-mirror, so a change is uploaded when the user asks rather
+  than the instant it is written. A timer-driven mirror using the same
+  shadow-copy path is the next step, and needs no kernel component.
 
 ### Tier 2: Quarantined Storport Prototype (`archive/windows-virtual-disk`)
 - An early Storport miniport prototype is retained only under `archive/` for

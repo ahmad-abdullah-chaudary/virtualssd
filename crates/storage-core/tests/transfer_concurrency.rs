@@ -321,3 +321,41 @@ async fn the_manifest_is_persisted_after_the_mirror() {
         assert!(descriptor.remote_object_id.is_some());
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_live_mirror_requires_a_mounted_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Arc::new(RecordingProvider::default());
+    let (_disk_id, engine) = make_disk(dir.path(), provider.clone(), 1);
+
+    // The disk was never mounted, so there is nothing to shadow-copy.
+    let result = engine.sync_vhdx_snapshot_live().await;
+    let error = result.expect_err("a live mirror of an unmounted disk must fail");
+    assert!(
+        error.to_string().contains("not mounted"),
+        "the error must explain that the disk is not mounted, got: {error}"
+    );
+    assert_eq!(
+        provider.uploads.load(Ordering::SeqCst),
+        0,
+        "nothing may be uploaded when the live mirror is refused"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_unmounted_mirror_refuses_to_run_against_a_mounted_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let provider = Arc::new(RecordingProvider::default());
+    let (_disk_id, engine) = make_disk(dir.path(), provider.clone(), 1);
+
+    // Pretend the disk is mounted. The unmounted mirror path must refuse,
+    // because reading the live file would be inconsistent.
+    engine.set_status(virtualssd_storage_core::DiskStatus::Online);
+
+    let result = engine.sync_vhdx_snapshot().await;
+    let error = result.expect_err("the unmounted mirror must refuse a mounted disk");
+    assert!(
+        error.to_string().contains("mounted"),
+        "the error must explain that the disk is mounted, got: {error}"
+    );
+}

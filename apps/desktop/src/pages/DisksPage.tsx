@@ -13,17 +13,22 @@ import {
   Copy,
   X,
   AlertTriangle,
+  Zap,
 } from 'lucide-react';
 
 interface DisksPageProps {
   disks: DiskTelemetry[];
   onMountToggle: (diskId: string, currentStatus: string) => void;
   onSync: (diskId: string) => void;
+  /** Mirrors a disk that is still mounted, through a volume shadow copy. */
+  onSyncLive: (diskId: string) => void;
   onDelete: (diskId: string, deleteRemoteData: boolean) => void;
   onVerify: (diskId: string) => void;
   onExportKey: (diskId: string) => Promise<string | null>;
   onImportKey: (diskId: string, recoveryKey: string) => Promise<boolean>;
   onOpenCreateModal?: () => void;
+  /** Whether the application is running with administrator privileges. */
+  elevated?: boolean | null;
 }
 
 function formatBytes(bytes: number, dec = 1): string {
@@ -38,11 +43,13 @@ export const DisksPage: React.FC<DisksPageProps> = ({
   disks,
   onMountToggle,
   onSync,
+  onSyncLive,
   onDelete,
   onVerify,
   onExportKey,
   onImportKey,
   onOpenCreateModal,
+  elevated,
 }) => {
   const [selectedId, setSelectedId] = useState<string | null>(disks[0]?.disk_id ?? null);
   const selectedDisk = disks.find((d) => d.disk_id === selectedId) ?? disks[0];
@@ -64,6 +71,14 @@ export const DisksPage: React.FC<DisksPageProps> = ({
     setIsSyncingId(id);
     onSync(id);
     setTimeout(() => setIsSyncingId(null), 1500);
+  };
+
+  const handleLiveSyncAction = (id: string) => {
+    setIsSyncingId(id);
+    onSyncLive(id);
+    // The live mirror runs while the disk stays mounted, so it can take
+    // longer than the unmounted mirror.
+    setTimeout(() => setIsSyncingId(null), 3000);
   };
 
   const handleExportKey = async (diskId: string) => {
@@ -239,6 +254,29 @@ export const DisksPage: React.FC<DisksPageProps> = ({
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isSyncingId === selectedDisk.disk_id ? 'animate-spin text-black' : 'text-zinc-600'}`} />
                     <span>Mirror Snapshot</span>
+                  </button>
+
+                  {/* Mirrors a disk that is still mounted, through a volume
+                      shadow copy, so the volume stays usable during the
+                      transfer. Requires administrator privileges. */}
+                  <button
+                    onClick={() => handleLiveSyncAction(selectedDisk.disk_id)}
+                    disabled={
+                      isSyncingId === selectedDisk.disk_id ||
+                      selectedDisk.status !== 'Online' ||
+                      !elevated
+                    }
+                    title={
+                      selectedDisk.status !== 'Online'
+                        ? 'Mount the disk first — this action mirrors a disk that is in use'
+                        : !elevated
+                          ? 'Mirroring a mounted disk uses a volume shadow copy, which requires administrator privileges. Use "Restart as administrator".'
+                          : 'Mirror the mounted disk through a volume shadow copy. The volume stays usable during the transfer.'
+                    }
+                    className="bg-[#18191d] hover:bg-black text-white font-semibold text-xs px-4 py-2.5 rounded-full transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Zap className={`w-3.5 h-3.5 text-[#d4f938] ${isSyncingId === selectedDisk.disk_id ? 'animate-pulse' : ''}`} />
+                    <span>Mirror While Mounted</span>
                   </button>
 
                   <button

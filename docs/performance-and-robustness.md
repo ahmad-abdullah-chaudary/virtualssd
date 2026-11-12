@@ -132,6 +132,44 @@ disk directory and corrupt each other's manifest and WAL.
 **Still to do:** an exclusive lock file on the disk directory, held for the
 lifetime of the open engine, released on drop.
 
+### 3.6 Mirroring a mounted disk — implemented
+
+`crates/storage-core/src/vss.rs` implements a Volume Shadow Copy of the
+volume that holds the VHDX, using the `Win32_ShadowCopy` WMI class.
+
+`VirtualDiskEngine::sync_vhdx_snapshot_live()`:
+
+1. **Flushes the guest file system** into the VHDX with
+   `FSCTL_FLUSH_VOLUME` (`windows_vhd::flush_volume`). NTFS writes everything
+   the guest has committed out to the virtual disk.
+2. **Takes a volume shadow copy** of the volume that holds the VHDX. The VSS
+   service asks the file system writer to flush its cache and then images the
+   volume.
+3. **Mirrors the shadow copy** with the same pipeline as an unmounted disk —
+   the transfer reads `\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopyN\...`
+   instead of the live file.
+4. **Releases the shadow copy** when the transfer ends, so its differential
+   area does not linger on the volume.
+
+The disk stays mounted and usable for the whole transfer. That is what turns
+VirtualSSD from a backup tool into a persistent drive.
+
+**Consistency.** The VHDX file is written by the Microsoft Virtual Disk
+driver (`vhdmp`), which pushes its data blocks through the file system
+cache. The NTFS VSS writer flushes that cache before the image is taken, so
+the copy contains the data that was written. The driver keeps its block
+allocation table in memory and writes it out lazily, so the copy can be
+*slightly behind* the live volume — but it is never a mixture of two moments,
+because the driver writes a data block before it marks the block allocated. A
+shadow copy is therefore either consistent or a little stale, and in both
+cases it is a valid VHDX. The guest flush in step 1 narrows that window
+further.
+
+**Still to verify.** The VSS path needs an elevated session, a real mounted
+VHDX, and a volume that supports shadow copies. It has not been exercised
+end to end in this environment. The unmounted mirror path remains the
+supported fallback and is unchanged.
+
 ---
 
 ## 4. Limitations that cannot be fixed without a kernel component
@@ -139,21 +177,25 @@ lifetime of the open engine, released on drop.
 ### 4.1 No live write-through — the disk is not a real cloud drive while mounted
 
 Windows writes go straight into the VHDX file. Nothing mirrors them to the
-provider until the user unmounts and mirrors manually.
+provider automatically.
 
-The options are:
+**What has changed:** the disk no longer has to be unmounted to be mirrored.
+`sync_vhdx_snapshot_live()` takes a volume shadow copy of the volume and
+mirrors that image while the disk stays mounted (see 3.6). What is still
+missing is the *push*: a change is mirrored when the user asks, not the
+instant it is written.
+
+The options for true write-through are:
 
 | Approach | What it takes | Verdict |
 |---|---|---|
-| **VSS (Volume Shadow Copy)** snapshot on demand | Windows `vsapi.dll`; application-consistent or crash-consistent snapshot of a live VHDX | **Feasible without a kernel driver.** This is the right answer for "mirror without unmounting". |
+| **Background mirroring on a timer** | The VSS path in 3.6, on a schedule | **Feasible now.** No kernel component. |
 | Filter driver (`fltmgr`) | Signed, attested file-system minifilter | Needs EV certificate + WHQL. The same wall the miniport hit. |
 | Kernel block driver | Storport miniport | Same wall, plus the data path was never completed. |
 | Filesystem on a cloud backend | A real network filesystem (SMB, NFS, or a cloud block device) | Different product; abandons the VHDX model. |
 
-**VSS is the achievable one.** It lets VirtualSSD take a consistent snapshot
-of the mounted volume and mirror that, which removes the "unmount first"
-workflow entirely. It is a Windows API, not a driver, so no signing
-attestation is required.
+A background worker that mirrors on a timer, using the shadow-copy path, is
+the achievable next step. It needs no kernel component at all.
 
 ### 4.2 No background auto-sync
 
@@ -222,15 +264,15 @@ The rule the implementation follows, and should keep following:
 
 | # | Change | File | Impact | Risk |
 |---|---|---|---|---|
-| 1 | VSS snapshot so mirroring works while mounted | new module | Very high | High |
-| 2 | Background auto-mirror timer | `apps/desktop/src-tauri/src/main.rs` | Medium | Low |
-| 3 | Cross-process disk lock | `crates/storage-core/src/lib.rs` | Medium | Low |
-| 4 | Remote space pre-flight and quota report | `crates/storage-core/src/lib.rs` | Low | Low |
-| 5 | VHDX Block Allocation Table to skip unallocated regions | new module | High | High |
-| 6 | Last-known-good manifest generation | `crates/manifest/src/lib.rs` | Low | Low |
-| 7 | Periodic remote integrity scrub | `crates/storage-core/src/lib.rs` | Low | Low |
+| 1 | Background auto-mirror on a timer, using the VSS path | `apps/desktop/src-tauri/src/main.rs` | High | Low |
+| 2 | Cross-process disk lock | `crates/storage-core/src/lib.rs` | Medium | Low |
+| 3 | Remote space pre-flight and quota report | `crates/storage-core/src/lib.rs` | Low | Low |
+| 4 | VHDX Block Allocation Table to skip unallocated regions | new module | High | High |
+| 5 | Last-known-good manifest generation | `crates/manifest/src/lib.rs` | Low | Low |
+| 6 | Periodic remote integrity scrub | `crates/storage-core/src/lib.rs` | Low | Low |
+| 7 | S3 / OneDrive / Backblaze provider adapters | new crates | Medium | Medium |
 
-Items 1 and 5 are what turn VirtualSSD from a backup tool into a persistent
+Items 1 and 4 are what turn VirtualSSD from a backup tool into a persistent
 drive.
 
 ---

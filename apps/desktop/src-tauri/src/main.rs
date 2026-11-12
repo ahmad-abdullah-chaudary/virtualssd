@@ -1575,6 +1575,91 @@ async fn sync_disk(
     Ok(SyncDiskReport { mirror, integrity })
 }
 
+/// Mirrors a disk that is still mounted, using a volume shadow copy.
+///
+/// This is what makes VirtualSSD a persistent drive: the disk stays mounted
+/// and usable while the mirror runs, because the transfer reads a point-in-time
+/// image of the volume instead of the live file.
+///
+/// Creating a volume shadow copy requires administrator privileges.
+#[tauri::command]
+async fn sync_disk_live(
+    state: tauri::State<'_, Arc<AppState>>,
+    disk_id: String,
+) -> Result<SyncDiskReport, String> {
+    let id = Uuid::parse_str(&disk_id).map_err(|e| e.to_string())?;
+    let engine = {
+        let disks = state.disks.read();
+        disks
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| "Disk not found".to_string())?
+    };
+    if engine.provider().is_none() {
+        return Err("Sync requires a connected cloud provider. Add a Google Drive or Telegram account first.".to_string());
+    }
+
+    if !windows_vhd::is_elevated() {
+        return Err(
+            "Mirroring a mounted disk uses a volume shadow copy, which requires administrator privileges. Restart VirtualSSD as administrator."
+                .to_string(),
+        );
+    }
+
+    // Serialize with mount/unmount/delete: a snapshot must not overlap a
+    // detach or a delete.
+    let _guard = state.mount_lock.lock().await;
+    tracing::info!(
+        target: "virtualssd_desktop::storage-core",
+        "Mirroring the mounted disk {id} through a volume shadow copy"
+    );
+
+    let mirror = engine
+        .sync_vhdx_snapshot_live()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for warning in &mirror.warnings {
+        tracing::warn!(target: "virtualssd_desktop::storage-core", "{warning}");
+    }
+    tracing::info!(
+        target: "virtualssd_desktop::storage-core",
+        "Live mirror finished for disk {id}: {} uploaded / {} deleted / {} unchanged chunk(s), {} byte(s)",
+        mirror.uploaded_chunks,
+        mirror.deleted_chunks,
+        mirror.skipped_chunks,
+        mirror.file_size_bytes
+    );
+
+    let verify_after_sync = state.settings.read().verify_after_sync;
+    let integrity = if verify_after_sync {
+        Some(integrity_report_for(&engine))
+    } else {
+        None
+    };
+
+    if let Some(audit) = &integrity {
+        if audit.passed {
+            tracing::info!(
+                target: "virtualssd_desktop::integrity",
+                "Post-sync audit for disk {id}: {}/{} chunk(s) verified locally, {} not present locally",
+                audit.verified_chunks,
+                audit.total_chunks,
+                audit.missing_chunks
+            );
+        } else {
+            tracing::error!(
+                target: "virtualssd_desktop::integrity",
+                "Post-sync audit for disk {id} found {} checksum error(s): {}",
+                audit.errors.len(),
+                audit.errors.join("; ")
+            );
+        }
+    }
+
+    Ok(SyncDiskReport { mirror, integrity })
+}
+
 #[tauri::command]
 async fn delete_disk(
     state: tauri::State<'_, Arc<AppState>>,
@@ -1930,6 +2015,7 @@ fn main() {
             mount_disk,
             unmount_disk,
             sync_disk,
+            sync_disk_live,
             delete_disk,
             verify_disk_integrity,
             get_engine_logs,
