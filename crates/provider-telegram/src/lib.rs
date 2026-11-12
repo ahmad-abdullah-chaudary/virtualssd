@@ -341,6 +341,25 @@ impl TelegramProvider {
                     ProviderError::Internal(format!(
                         "Chunk exceeds the Telegram upload limit: {detail}"
                     ))
+                } else if lowered.contains("chat not found") {
+                    ProviderError::Internal(format!(
+                        "Telegram {operation} failed because chat {} does not exist: {detail}. \
+                         Use the numeric chat id of a channel or group the bot is a member of, \
+                         not a user id.",
+                        self.config.storage_chat_id
+                    ))
+                } else if lowered.contains("bot is not a member")
+                    || lowered.contains("bot was kicked")
+                    || lowered.contains("bot can't initiate")
+                    || lowered.contains("bot cannot initiate")
+                    || lowered.contains("bot is blocked")
+                {
+                    ProviderError::Internal(format!(
+                        "Telegram {operation} failed because the bot cannot post in chat {}: \
+                         {detail}. Add the bot to the chat, or start it once so it may message \
+                         you, and make sure it has not been blocked.",
+                        self.config.storage_chat_id
+                    ))
                 } else {
                     ProviderError::Internal(format!("Telegram {operation} failed: {detail}"))
                 }
