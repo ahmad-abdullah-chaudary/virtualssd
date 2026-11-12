@@ -74,6 +74,17 @@ foreach ($asset in $assets) {
         Write-Host "  SKIP  $($asset.Name) (not present)" -ForegroundColor DarkYellow
         continue
     }
+
+    # Only Windows executable formats can carry an Authenticode signature.
+    # The portable archive is a zip, so the executable inside it is the signed
+    # artifact and the archive itself is not signed.
+    $signable = @('.exe', '.msi', '.dll', '.cab') -contains ([System.IO.Path]::GetExtension($asset.Path).ToLower())
+    if (-not $signable) {
+        Write-Host "  N/A   $($asset.Name)  ($([math]::Round((Get-Item $asset.Path).Length/1MB,2)) MB) - archive, not signable; the executable inside is signed" -ForegroundColor DarkGray
+        $present += $asset
+        continue
+    }
+
     $sig = Get-AuthenticodeSignature -FilePath $asset.Path
     $signed = $null -ne $sig.SignerCertificate
     Write-Host "  $(if ($signed) { 'SIGNED' } else { 'UNSIGNED' })  $($asset.Name)  ($([math]::Round((Get-Item $asset.Path).Length/1MB,2)) MB)" -ForegroundColor $(if ($signed) { "Green" } else { "Yellow" })
