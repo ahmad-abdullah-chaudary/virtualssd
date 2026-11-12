@@ -115,4 +115,14 @@ pub trait CloudStorageProvider: Send + Sync {
     async fn flush_transfer_state(&self) -> Result<(), ProviderError> {
         Ok(())
     }
+
+    /// Returns and clears the non-fatal problems reported by the last
+    /// operation, such as a manifest index that could not be updated.
+    ///
+    /// These are warnings, not failures: the operation itself succeeded, but
+    /// something the user should know about did not work. The default
+    /// implementation reports nothing.
+    fn take_operation_warnings(&self) -> Vec<String> {
+        Vec::new()
+    }
 }

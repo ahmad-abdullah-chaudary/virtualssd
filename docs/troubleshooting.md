@@ -46,7 +46,28 @@
   - Invalid JSON is preserved as `settings.json.corrupt-<timestamp>`.
   - Defaults are active until you save settings again. Open **Settings**, correct the values, and save.
 
-### 7. Diagnostics
+### 7. Creating a disk fails with a Telegram catalog or pin error
+- **Cause**: the adapter publishes the disk manifest and then updates a pinned
+  catalog document, which is how another machine discovers the disks.
+  Telegram only allows a bot to pin messages in a **channel**, or in a group
+  where the bot is an **administrator**. A bot in an ordinary group or in a
+  private chat cannot pin, so the catalog update fails.
+- **Resolution**:
+  - The disk is still created and can still be mirrored. The application shows
+    a warning explaining that another machine will not discover the disk
+    automatically and must **import it by its disk ID** instead.
+  - To get automatic discovery, use a channel, or promote the bot to
+    administrator in the group.
+  - The provider reports this limitation when it is added, so you see it before
+    the first disk is created.
+
+### 8. The Create Disk dialog clears itself
+- **Cause**: this was a bug, fixed. The form was reset whenever the provider
+  list refreshed, and the application polls the backend, so the volume name and
+  any error message were wiped every few seconds.
+- **Resolution**: the form is now reset only when the dialog is opened.
+
+### 9. Diagnostics
 - The desktop Diagnostics page shows the **live backend engine log**: real entries emitted by the Rust `tracing` subscriber in the desktop process and the shared `storage-core`, `provider-gdrive`, and `provider-telegram` crates.
 - The stream is delivered over a Tauri event (`engine-log`) and is also retrievable with the `get_engine_logs` command, which returns the most recent 500 records of the current session. **Clear** empties that buffer and the clear action is itself recorded in the backend.
 - The page does not attach a kernel trace probe, and the browser preview has no Rust backend, so it shows an explicit "backend log stream unavailable" state instead of placeholder entries.

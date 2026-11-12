@@ -17,8 +17,7 @@ This document describes what the current adapters actually do. It intentionally 
 | **Chunk Size** | 4 MiB | 4 MiB |
 | **Resumable Uploads** | Yes (`uploadType=resumable`), sessions persisted for 6 days | No per-chunk resumable protocol; checksum dedupe avoids duplicate uploads |
 | **Rate Limits** | HTTP 429 mapped to `RateLimited` | HTTP 429 uses Telegram `parameters.retry_after` when present |
-| **Quota API** | `about?fields=storageQuota` | No Bot API quota endpoint |
-| **Unlimited / Missing Quota** | Stored as `0`; UI says “Not reported by Google” | Stored as `0`; UI says “Not exposed by Bot API” |
+| **Quota API** | `about?fields=storageQuota` | No Bot API quota endpoint || **Unlimited / Missing Quota** | Stored as `0`; UI says “Not reported by Google” | Stored as `0`; UI says “Not exposed by Bot API” |
 | **Metadata** | File name + `appProperties` | Message caption + SQLite mapping table |
 | **Deletion** | Drive file delete endpoint | `deleteMessage` plus local mapping removal |
 | **Manifest Discovery** | Query by `manifest_<disk-id>.json` | Pinned catalog document, with legacy pinned per-disk manifest fallback |
@@ -113,10 +112,19 @@ This document describes what the current adapters actually do. It intentionally 
 - A per-provider `manifest_lock` serializes catalog read-modify-write cycles so
   concurrent disk syncs cannot drop entries.
 - After the catalog successfully references a new manifest, the previous manifest
-  message for that disk is deleted best-effort. If the catalog upload or pin fails,
-  `publish_manifest` returns an error instead of claiming success, because a fresh
-  installation would not discover the disk; the next sync retries and removes the
-  superseded message.
+  message for that disk is deleted best-effort.
+- **The catalog is a convenience, not a requirement.** Telegram only lets a bot
+  pin messages in a channel, or in a group where the bot is an administrator, so
+  a bot in an ordinary group or a private chat cannot publish the pinned
+  catalog. That must not stop the user working: the manifest document itself is
+  uploaded and recorded, the disk is created and can be mirrored, and the
+  catalog failure is reported as a warning that says another machine has to
+  import the disk by its ID. The adapter checks the bot's pin capability when
+  the provider is added, so the limitation is reported up front rather than at
+  the first disk creation.
+- The adapter also keeps a local index of the manifests it published, so the
+  installation that created a disk can always find it again, whether or not the
+  pinned catalog exists.
 
 ### Quota
 

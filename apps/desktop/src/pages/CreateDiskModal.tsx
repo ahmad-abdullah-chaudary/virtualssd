@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, HardDrive, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { ProviderRecord } from '../types';
 
@@ -52,24 +52,35 @@ export const CreateDiskModal: React.FC<CreateDiskModalProps> = ({
   const [done, setDone] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Auto-select first connected provider if available
+  // The form is reset when the dialog *opens*. It must not be reset when the
+  // provider list changes: the application polls the backend, so `providers`
+  // is a new array on every poll, and resetting on that would wipe the name
+  // the user had typed and any error that had been shown.
+  const wasOpen = useRef(isOpen);
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpen.current) {
       setName('');
       setCapacityGb(defaultCapacityGb);
       setCreating(false);
       setDone(false);
       setCreateError(null);
-      const firstOnline = providers.find((p) => p.connected);
-      if (firstOnline) {
-        setSelectedProviderId(firstOnline.id);
-      } else if (providers.length > 0) {
-        setSelectedProviderId(providers[0].id);
-      } else {
-        setSelectedProviderId('');
-      }
+      setSelectedProviderId('');
     }
-  }, [isOpen, providers, defaultCapacityGb]);
+    wasOpen.current = isOpen;
+  }, [isOpen, defaultCapacityGb]);
+
+  // Select the first connected provider, but only while the user has not
+  // already chosen one. This runs on every provider refresh without
+  // disturbing the rest of the form.
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedProviderId((current) => {
+      if (current && providers.some((p) => p.id === current)) return current;
+      const firstOnline = providers.find((p) => p.connected);
+      if (firstOnline) return firstOnline.id;
+      return providers.length > 0 ? providers[0].id : '';
+    });
+  }, [isOpen, providers]);
 
   if (!isOpen) return null;
 

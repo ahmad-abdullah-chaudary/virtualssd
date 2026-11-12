@@ -91,6 +91,17 @@ pub struct DeleteReport {
     pub remote: Option<RemoteDeleteReport>,
 }
 
+/// The result of creating a disk.
+///
+/// `warnings` carries the non-fatal problems the provider reported, such as a
+/// manifest index that could not be pinned. The disk was created; the warning
+/// explains what does not work.
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateDiskReport {
+    pub disk: DiskTelemetry,
+    pub warnings: Vec<String>,
+}
+
 // -- Secure Provider Persistence ---------------------------------------------
 //
 // The provider index (`providers.json`) contains no secrets. Credentials are
@@ -718,6 +729,25 @@ fn list_providers(state: tauri::State<Arc<AppState>>) -> Vec<ProviderRecord> {
     records.clone()
 }
 
+/// Returns and clears the non-fatal problems a provider reported.
+///
+/// This is how the application tells the user about something that does not
+/// work even though the operation succeeded, for example a Telegram bot that
+/// cannot pin messages in the storage chat.
+#[tauri::command]
+fn take_provider_warnings(
+    state: tauri::State<'_, Arc<AppState>>,
+    provider_id: String,
+) -> Vec<String> {
+    let provider = {
+        let providers = state.live_providers.read();
+        providers.get(&provider_id).cloned()
+    };
+    provider
+        .map(|provider| provider.take_operation_warnings())
+        .unwrap_or_default()
+}
+
 #[tauri::command]
 async fn verify_provider(
     state: tauri::State<'_, Arc<AppState>>,
@@ -1196,7 +1226,7 @@ async fn create_disk(
     name: String,
     provider_account_id: String,
     capacity_gb: u64,
-) -> Result<DiskTelemetry, String> {
+) -> Result<CreateDiskReport, String> {
     let provider: Option<Arc<dyn CloudStorageProvider>> = {
         let providers = state.live_providers.read();
         providers.get(&provider_account_id).cloned()
@@ -1303,7 +1333,18 @@ async fn create_disk(
         short_id(&provider_account_id),
         settings.encrypt_new_disks
     );
-    Ok(arc_engine.telemetry())
+
+    // Collect whatever the provider reported as a non-fatal problem, for
+    // example a manifest index it could not pin.
+    let warnings = provider.take_operation_warnings();
+    for warning in &warnings {
+        tracing::warn!(target: "virtualssd_desktop::manifest", "{warning}");
+    }
+
+    Ok(CreateDiskReport {
+        disk: arc_engine.telemetry(),
+        warnings,
+    })
 }
 
 fn parse_requested_drive_letter(value: Option<String>) -> Result<Option<char>, String> {
@@ -2001,6 +2042,7 @@ fn main() {
             add_telegram_provider,
             list_providers,
             verify_provider,
+            take_provider_warnings,
             remove_provider,
             list_disks,
             get_app_stats,

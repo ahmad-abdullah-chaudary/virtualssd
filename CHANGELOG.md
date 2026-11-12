@@ -70,6 +70,20 @@ identifiable — for example `1.0.0+42`.
 - Telegram `publish_manifest` returned success even when the pinned manifest
   catalog could not be updated, which left a fresh installation unable to
   discover the disk. It now returns an explicit error so the sync is retried.
+- **A Telegram bot that cannot pin messages no longer blocks disk creation.**
+  Publishing a manifest uploads the manifest document and then updates a
+  pinned catalog, which is how another machine discovers the disks. Telegram
+  only lets a bot pin in a channel, or in a group where the bot is an
+  administrator, so a bot in an ordinary group or a private chat could add the
+  provider and then fail every disk creation. The catalog update is now a
+  warning rather than a failure: the disk is created and can be mirrored, and
+  the application tells the user that another machine must import the disk by
+  its ID. The provider also checks the bot's pin capability when it is added,
+  so the limitation is reported up front instead of at the first failure.
+- **The Create Disk dialog no longer resets itself.** The form was reset
+  whenever the provider list changed, and the application polls the backend, so
+  the volume name and any error message were wiped every few seconds. The
+  form is now reset when the dialog opens, not on every refresh.
 - The Diagnostics page previously showed hardcoded startup lines and a fake
   "manual refresh" entry; both are removed.
 

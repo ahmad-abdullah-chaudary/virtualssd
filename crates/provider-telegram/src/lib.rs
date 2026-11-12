@@ -110,6 +110,9 @@ pub struct TelegramProvider {
     /// Serializes manifest catalog read-modify-write cycles across disks that
     /// share this provider, so concurrent syncs cannot drop catalog entries.
     manifest_lock: tokio::sync::Mutex<()>,
+    /// Non-fatal problems reported by the last operation, for example a
+    /// manifest index that could not be pinned.
+    warnings: Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl std::fmt::Debug for TelegramProvider {
@@ -181,7 +184,108 @@ impl TelegramProvider {
             client: build_client(),
             db: Arc::new(Mutex::new(conn)),
             manifest_lock: tokio::sync::Mutex::new(()),
+            warnings: Arc::new(std::sync::Mutex::new(Vec::new())),
         })
+    }
+
+    /// Records a non-fatal problem so the caller can report it to the user.
+    fn push_warning(&self, warning: String) {
+        let mut warnings = self.warnings.lock().unwrap();
+        warnings.push(warning);
+    }
+
+    /// Reports why the bot cannot pin messages in the storage chat, if that is
+    /// the case.
+    ///
+    /// Returns `None` when the chat is one where pinning can work. Telegram
+    /// only allows pinning in a channel, or in a group or supergroup where the
+    /// bot is an administrator. A private chat can never be pinned in.
+    async fn pin_capability_problem(&self, token: &str) -> Option<String> {
+        // The query is built into the URL directly: `Url::query_pairs_mut`
+        // borrows the URL, which makes the surrounding future not `Send`.
+        let url = format!(
+            "{TELEGRAM_API_BASE}/getChat?chat_id={}",
+            self.config.storage_chat_id
+        );
+
+        let res = self.client.get(url).send().await.ok()?;
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return None;
+        }
+
+        let parsed = serde_json::from_str::<serde_json::Value>(&body).ok()?;
+        let chat_type = parsed
+            .get("result")
+            .and_then(|value| value.get("type"))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+
+        match chat_type {
+            "channel" => None,
+            "private" => Some(
+                "A private chat cannot be pinned. Use a channel, or a group where the bot is an administrator."
+                    .to_string(),
+            ),
+            "group" | "supergroup" => {
+                // Ask for the bot's own membership record to see whether it
+                // can pin.
+                let bot_id = self.bot_id_from_me(token).await?;
+                let url = format!(
+                    "{TELEGRAM_API_BASE}/getChatMember?chat_id={}&user_id={}",
+                    self.config.storage_chat_id, bot_id
+                );
+
+                let res = self.client.get(url).send().await.ok()?;
+                let status = res.status();
+                let body = res.text().await.unwrap_or_default();
+                if !status.is_success() {
+                    return None;
+                }
+
+                let parsed = serde_json::from_str::<serde_json::Value>(&body).ok()?;
+                let status = parsed
+                    .get("result")
+                    .and_then(|value| value.get("status"))
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default();
+
+                match status {
+                    "administrator" | "creator" => None,
+                    _ => Some(
+                        "The bot is not an administrator in this group. Promote it, or use a channel, \
+                         so disks can be discovered automatically."
+                            .to_string(),
+                    ),
+                }
+            }
+            _ => Some(
+                "Telegram does not allow this kind of chat to be pinned. Use a channel, or a group \
+                 where the bot is an administrator."
+                    .to_string(),
+            ),
+        }
+    }
+
+    /// Reads the bot's own numeric id.
+    async fn bot_id_from_me(&self, token: &str) -> Option<i64> {
+        let res = self
+            .client
+            .get(format!("{TELEGRAM_API_BASE}/bot{token}/getMe"))
+            .send()
+            .await
+            .ok()?;
+        let status = res.status();
+        let body = res.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return None;
+        }
+        serde_json::from_str::<serde_json::Value>(&body)
+            .ok()?
+            .get("result")?
+            .get("id")?
+            .as_i64()
     }
 
     fn bot_token(&self) -> Result<&str, ProviderError> {
@@ -830,12 +934,31 @@ impl CloudStorageProvider for TelegramProvider {
             .unwrap_or(false);
 
         if is_bot {
+            // Check whether this bot can pin messages in the storage chat.
+            // Pinning is what lets another machine discover the disks
+            // automatically. A bot can only pin in a channel, or in a group
+            // where it is an administrator, so warn early instead of letting
+            // the first disk creation fail.
+            if let Some(reason) = self.pin_capability_problem(token).await {
+                let warning = format!(
+                    "The bot cannot pin messages in chat {}. Another machine will not \
+                     discover disks automatically; import them by disk ID instead. {reason}",
+                    self.config.storage_chat_id
+                );
+                tracing::warn!("{warning}");
+                self.push_warning(warning);
+            }
             Ok(())
         } else {
             Err(ProviderError::AuthExpired(
                 "Telegram getMe did not identify a bot account".into(),
             ))
         }
+    }
+
+    fn take_operation_warnings(&self) -> Vec<String> {
+        let mut warnings = self.warnings.lock().unwrap();
+        std::mem::take(&mut *warnings)
     }
 
     async fn get_quota(&self) -> Result<StorageQuota, ProviderError> {
@@ -1222,16 +1345,30 @@ impl CloudStorageProvider for TelegramProvider {
             },
         );
 
-        // A manifest that is not referenced by the pinned catalog cannot be
-        // discovered by a fresh installation. Report that as a failure so the
-        // caller can retry instead of claiming a fully successful publication.
-        self.upload_catalog(token, &entries).await.map_err(|err| {
-            ProviderError::Internal(format!(
-                "Manifest message {message_id} was uploaded, but the pinned Telegram \
-                 catalog could not be updated; a fresh installation may not discover \
-                 this disk. Retry the sync. Catalog error: {err}"
-            ))
-        })?;
+        // The catalog is the remote index that lets a fresh installation
+        // discover every disk. Publishing it needs the bot to be able to pin a
+        // message, which Telegram only allows in a channel or in a group where
+        // the bot is an administrator.
+        //
+        // A failure to publish the index must NOT fail the operation. The
+        // manifest itself is already uploaded and recorded, so the disk exists
+        // and can be mirrored; only the convenience of discovering it from
+        // another machine is affected, and that installation can import the
+        // disk by its UUID instead. Blocking here would make the product
+        // unusable for anyone whose bot is not a chat administrator.
+        match self.upload_catalog(token, &entries).await {
+            Ok(_) => {}
+            Err(err) => {
+                let warning = format!(
+                    "The manifest was published, but the Telegram manifest index could not be \
+                     updated ({err}). Another machine will not discover this disk \
+                     automatically: import it by its disk ID instead. A bot can only pin \
+                     messages in a channel, or in a group where it is an administrator."
+                );
+                tracing::warn!("{warning}");
+                self.push_warning(warning);
+            }
+        }
 
         // The catalog now references the new manifest document, so the
         // previous manifest message for this disk can be removed.
@@ -1373,6 +1510,32 @@ mod tests {
         assert!(!json.contains("SUPER-SECRET"));
         assert!(!json.contains("bot_token"));
         assert!(!json.contains("HASH-SECRET"));
+    }
+
+    #[test]
+    fn operation_warnings_are_reported_once_and_then_cleared() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = TelegramProvider::new(sample_config(
+            "123456:TOKEN",
+            dir.path().join("telegram.db"),
+        ))
+        .unwrap();
+
+        assert!(
+            provider.take_operation_warnings().is_empty(),
+            "a provider that has not run must not report warnings"
+        );
+
+        provider.push_warning("The bot cannot pin messages in this chat.".to_string());
+
+        let warnings = provider.take_operation_warnings();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("cannot pin"));
+
+        assert!(
+            provider.take_operation_warnings().is_empty(),
+            "warnings must be cleared once they have been read"
+        );
     }
 
     #[test]

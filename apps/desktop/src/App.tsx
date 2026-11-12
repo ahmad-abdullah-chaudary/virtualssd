@@ -11,7 +11,7 @@ import { IntegrityPage } from './pages/IntegrityPage';
 import { RecoveryPage } from './pages/RecoveryPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { DiskTelemetry, AppStats, ProviderRecord, IntegrityReport, AppSettings, SettingsSnapshot, SyncDiskReport, ImportReport, DeleteReport, EngineLogEntry, RuntimeStatus } from './types';
+import { DiskTelemetry, AppStats, ProviderRecord, IntegrityReport, AppSettings, SettingsSnapshot, SyncDiskReport, ImportReport, DeleteReport, CreateDiskReport, EngineLogEntry, RuntimeStatus } from './types';
 
 // ── Tauri IPC bridge with stateful storage engine ───────────────────────────
 const STORAGE_KEY = 'virtualssd_active_disks';
@@ -245,7 +245,11 @@ async function callTauri<T>(cmd: string, args?: Record<string, unknown>): Promis
     };
     const updated = [...getLocalDisks(), newDisk];
     saveLocalDisks(updated);
-    return newDisk as unknown as T;
+    return { disk: newDisk, warnings: [] } as unknown as T;
+  }
+
+  if (cmd === 'take_provider_warnings') {
+    return [] as unknown as T;
   }
 
   if (cmd === 'mount_disk') {
@@ -678,6 +682,13 @@ export const App: React.FC = () => {
         type: record.connected ? 'success' : 'error',
       });
       setTimeout(() => setNotification(null), 5000);
+      // The provider may report that something does not work even though the
+      // connection succeeded, for example that the bot cannot pin messages.
+      const warnings = await callTauri<string[]>('take_provider_warnings', { providerId: record.id });
+      if (warnings.length > 0) {
+        setNotification({ text: warnings[0], type: 'info' });
+        setTimeout(() => setNotification(null), 14000);
+      }
       await loadData();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -730,7 +741,7 @@ export const App: React.FC = () => {
     capacityGb: number,
   ) => {
     try {
-      await callTauri<DiskTelemetry>('create_disk', { name, providerAccountId, capacityGb });
+      const report = await callTauri<CreateDiskReport>('create_disk', { name, providerAccountId, capacityGb });
       const provName = providers.find(p => p.id === providerAccountId)?.display_name ?? providerAccountId;
       setNotification({
         text: `Volume '${name}' was created on ${provName} and its manifest was published.`,
@@ -738,6 +749,12 @@ export const App: React.FC = () => {
       });
       setTimeout(() => setNotification(null), 6000);
       await loadData();
+      // The provider may report something that did not work even though the
+      // disk was created. Show it rather than hiding it.
+      report.warnings.forEach((warning) => {
+        setNotification({ text: warning, type: 'info' });
+        setTimeout(() => setNotification(null), 12000);
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(`Disk creation failed: ${msg}`);

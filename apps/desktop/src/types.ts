@@ -90,6 +90,13 @@ export interface DeleteReport {
   remote: { deleted_chunks: number; deleted_manifest: boolean } | null;
 }
 
+/** The result of creating a disk, including anything the provider warned about. */
+export interface CreateDiskReport {
+  disk: DiskTelemetry;
+  /** Non-fatal problems, such as a manifest index that could not be pinned. */
+  warnings: string[];
+}
+
 export interface AppStats {
   total_capacity_bytes: number;
   total_allocated_bytes: number;
