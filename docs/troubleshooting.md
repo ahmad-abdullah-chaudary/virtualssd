@@ -76,7 +76,29 @@
   - The same applies to Google Drive, with `HTTPS_PROXY` pointed at a proxy
     that can reach `www.googleapis.com`.
 
-### 8. Creating a disk fails with a Telegram catalog or pin error
+### 8. Google Drive rejects the credentials
+- **Symptom**: the provider is not saved, and the message mentions a failed
+  token refresh or an invalid grant.
+- **Cause**, in the order it is worth checking:
+  - The OAuth consent screen is still in **Testing** mode. Google then issues
+    refresh tokens that expire after **seven days**, and only accounts listed
+    under **Test users** can authorise it at all.
+  - The grant was revoked at <https://myaccount.google.com/permissions>.
+  - The refresh token was copied with a trailing space or a line break.
+  - The Drive API is not enabled for the Google Cloud project.
+- **Resolution**: work through
+  [google-drive-setup.md](google-drive-setup.md) again, and repeat the consent
+  flow with `scripts\get-google-drive-token.ps1`. The script prints the
+  refresh token only once, so copy it exactly as printed.
+- **Check it independently**:
+  ```powershell
+  curl.exe -s -X POST -d "client_id=<CLIENT_ID>&grant_type=refresh_token&refresh_token=<REFRESH_TOKEN>" https://oauth2.googleapis.com/token
+  ```
+  A working grant returns an `access_token`. An error names the cause, for
+  example `{"error":"invalid_grant","error_description":"Token has been
+  expired or revoked."}`.
+
+### 9. Creating a disk fails with a Telegram catalog or pin error
 - **Cause**: the adapter publishes the disk manifest and then updates a pinned
   catalog document, which is how another machine discovers the disks.
   Telegram only allows a bot to pin messages in a **channel**, or in a group
@@ -91,13 +113,13 @@
   - The provider reports this limitation when it is added, so you see it before
     the first disk is created.
 
-### 8. The Create Disk dialog clears itself
+### 10. The Create Disk dialog clears itself
 - **Cause**: this was a bug, fixed. The form was reset whenever the provider
   list refreshed, and the application polls the backend, so the volume name and
   any error message were wiped every few seconds.
 - **Resolution**: the form is now reset only when the dialog is opened.
 
-### 9. Diagnostics
+### 11. Diagnostics
 - The desktop Diagnostics page shows the **live backend engine log**: real entries emitted by the Rust `tracing` subscriber in the desktop process and the shared `storage-core`, `provider-gdrive`, and `provider-telegram` crates.
 - The stream is delivered over a Tauri event (`engine-log`) and is also retrievable with the `get_engine_logs` command, which returns the most recent 500 records of the current session. **Clear** empties that buffer and the clear action is itself recorded in the backend.
 - The page does not attach a kernel trace probe, and the browser preview has no Rust backend, so it shows an explicit "backend log stream unavailable" state instead of placeholder entries.

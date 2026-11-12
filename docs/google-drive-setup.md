@@ -126,7 +126,9 @@ If verification fails, the credentials are **not** stored.
 
 ### "Failed to refresh Google Drive token"
 
-Google rejected the refresh token. The usual reasons:
+Google rejected the refresh token. See
+[troubleshooting.md](troubleshooting.md#8-google-drive-rejects-the-credentials)
+for the full list of causes. The usual reasons:
 
 - The consent screen is still in **Testing** mode, so the token already
   expired. Publish the consent screen to **Production**, or add your account

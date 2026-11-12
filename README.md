@@ -243,13 +243,13 @@ See [SECURITY.md](SECURITY.md) for the full threat model and
 **Windows 11 x64 or Windows 10 x64 (build 19044+).** The Microsoft Edge
 WebView2 Runtime is preinstalled on current Windows.
 
-Grab the latest release:
+Grab the latest release. **Most people want `VirtualSSD-setup.exe`.**
 
 | Asset | Use it when |
 |---|---|
-| [`VirtualSSD-setup.exe`](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases/latest) | You want the installer. It registers the Start Menu shortcut and the uninstaller. |
-| [`VirtualSSD.msi`](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases/latest) | You are deploying to managed or enterprise machines. |
-| [`VirtualSSD-portable.zip`](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases/latest) | You want a portable copy with no installation. Unpack it and run `VirtualSSD.exe`. |
+| **`VirtualSSD-setup.exe`** | **The normal choice.** A per-user installer that needs no administrator rights, and it registers the Start Menu shortcut, the desktop shortcut, and the uninstaller. |
+| `VirtualSSD.msi` | You are deploying to managed or enterprise machines, or your software deployment system insists on MSI. It installs per-machine and does want administrator rights. |
+| `VirtualSSD-portable.zip` | You want a portable copy with no installation at all. Unpack it and run `VirtualSSD.exe`. |
 | `VirtualSSD.exe` | The bare executable. It **needs `WebView2Loader.dll` next to it** — use the portable zip instead of downloading this on its own. |
 
 > **"WebView2Loader.dll was not found"** — the application links the WebView2
