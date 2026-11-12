@@ -214,15 +214,17 @@ function Install-Artifact {
     Copy-Item $Source $staging -Force
 
     try {
-        Remove-Item $Destination -Force -ErrorAction SilentlyContinue
+        # Move the old file out of the way rather than overwriting it. Windows
+        # opens a running executable with a delete share, so it can be renamed
+        # even while it is running, but it cannot be overwritten in place.
+        $replaced = "$Destination.replaced"
+        Remove-Item $replaced -Force -ErrorAction SilentlyContinue
+        Move-Item $Destination $replaced -Force -ErrorAction SilentlyContinue
         Move-Item $staging $Destination -Force
+        Remove-Item $replaced -Force -ErrorAction SilentlyContinue
     } catch {
-        # The destination is still held by a running process. Fall back to a
-        # plain copy and report it, so the build does not silently produce a
-        # stale artifact.
         Remove-Item $staging -Force -ErrorAction SilentlyContinue
-        Copy-Item $Source $Destination -Force
-        Write-Host "    (the previous $Destination was in use and could not be replaced cleanly)" -ForegroundColor Yellow
+        throw "Could not replace $Destination. Close any running VirtualSSD window and build again."
     }
     return $true
 }
