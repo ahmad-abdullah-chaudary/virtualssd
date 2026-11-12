@@ -17,7 +17,14 @@ $distDir = Join-Path $repoRoot "dist"
 $repo = "ahmad-abdullah-chaudary/virtualssd"
 $api = "https://api.github.com"
 
-param()
+param(
+    [string]$Version,
+    # The commit the artifacts were built from. It defaults to HEAD, but a
+    # release must point at the commit the binary was actually compiled from,
+    # which is not always the newest commit when tooling changes are added
+    # after a build.
+    [string]$Commit
+)
 
 function Get-GitHubToken {
     $filled = "protocol=https`nhost=github.com`n`n" | git credential fill 2>$null
@@ -40,18 +47,17 @@ $headers = @{
 }
 
 # ── Version ───────────────────────────────────────────────────────────────────
-$version = $args[0]
-if (-not $version) { $version = $env:VIRTUALSSD_RELEASE_VERSION }
-if (-not $version) {
+if (-not $Version) { $Version = $env:VIRTUALSSD_RELEASE_VERSION }
+if (-not $Version) {
     # Fall back to the version recorded by the last build.
     $versionFile = Join-Path $distDir "VERSION.txt"
     if (Test-Path $versionFile) {
         $line = Get-Content $versionFile | Where-Object { $_ -match '^VirtualSSD (.+)$' } | Select-Object -First 1
-        if ($line) { $version = ($line -replace '^VirtualSSD ', '').Trim() }
+        if ($line) { $Version = ($line -replace '^VirtualSSD ', '').Trim() }
     }
 }
-if (-not $version) { throw "No release version was given and dist\VERSION.txt does not exist." }
-$tag = "v$version"
+if (-not $Version) { throw "No release version was given and dist\VERSION.txt does not exist." }
+$tag = "v$Version"
 Write-Host "Publishing $repo release $tag" -ForegroundColor Cyan
 
 # ── Verify the artifacts exist and are signed ─────────────────────────────────
@@ -76,16 +82,16 @@ if ($present.Count -eq 0) { throw "No release assets were found in $distDir." }
 
 # ── Tag ───────────────────────────────────────────────────────────────────────
 Push-Location $repoRoot
+if (-not $Commit) { $Commit = (git rev-parse HEAD).Trim() }
 $existingTag = git tag --list $tag
 if (-not $existingTag) {
-    git tag -a $tag -m "VirtualSSD $version"
-    Write-Host "Created tag $tag" -ForegroundColor Green
+    git tag -a $tag $Commit -m "VirtualSSD $Version"
+    Write-Host "Created tag $tag at $Commit" -ForegroundColor Green
 }
 $taggedCommit = git rev-list -n 1 $tag
-$headCommit = git rev-parse HEAD
-if ($taggedCommit -ne $headCommit) {
+if ($taggedCommit -ne $Commit) {
     Pop-Location
-    throw "Tag $tag points at $taggedCommit but HEAD is $headCommit. The working tree must be committed before tagging."
+    throw "Tag $tag points at $taggedCommit but the artifacts were built from $Commit."
 }
 git push origin $tag
 Pop-Location
@@ -99,7 +105,7 @@ $notes = if (Test-Path $templatePath) {
 } else {
     "# VirtualSSD $version`n`nSee the CHANGELOG for details."
 }
-$notes = $notes.Replace("{{VERSION}}", $version)
+$notes = $notes.Replace("{{VERSION}}", $Version)
 
 if (Test-Path $changelogPath) {
     $changelog = Get-Content $changelogPath -Raw
@@ -124,7 +130,7 @@ if ($existingRelease) {
 } else {
     $payload = @{
         tag_name         = $tag
-        name             = "VirtualSSD $version"
+        name             = "VirtualSSD $Version"
         body             = $notes
         draft            = $false
         prerelease       = $false
