@@ -306,7 +306,9 @@ impl TelegramProvider {
     }
 
     fn network_error(&self, context: &str, error: reqwest::Error) -> ProviderError {
-        ProviderError::Network(self.redact(&format!("{context}: {error}")))
+        let failure = virtualssd_provider_contract::transport::classify(&error);
+        let advice = virtualssd_provider_contract::transport::advice("api.telegram.org", &failure);
+        ProviderError::Network(self.redact(&format!("{context}: {}. {advice}", failure.message())))
     }
 
     /// Maps a Telegram API failure to a typed provider error, extracting the

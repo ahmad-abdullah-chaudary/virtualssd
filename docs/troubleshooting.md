@@ -46,7 +46,37 @@
   - Invalid JSON is preserved as `settings.json.corrupt-<timestamp>`.
   - Defaults are active until you save settings again. Open **Settings**, correct the values, and save.
 
-### 7. Creating a disk fails with a Telegram catalog or pin error
+### 7. "Network connection failure" when adding a provider
+- **Symptom**: `Telegram verification failed: Network connection failure:
+  Telegram getMe failed: error sending request for url
+  (https://api.telegram.org/bot.../getMe)`.
+- **Cause**: the request never reached the server. The application now says
+  so explicitly: *"The connection was closed or reset before any data was
+  exchanged."*
+- **How to confirm**: from a command prompt, `curl -v
+  https://api.telegram.org/bot<token>/getMe` fails with
+  `Send failure: Connection was reset`, while `curl -v https://github.com`
+  succeeds. When one host resets and another works, the network is filtering
+  that destination.
+- **Resolution**:
+  - Try a different network. Corporate, school and some ISP networks block
+    Telegram outright.
+  - Use a VPN.
+  - Use a proxy. The application reads the standard proxy environment
+    variables, so no setting is needed inside the application:
+    ```powershell
+    # HTTP/HTTPS proxy
+    $env:HTTPS_PROXY = "http://proxy.example.com:8080"
+    # SOCKS5 proxy
+    $env:ALL_PROXY = "socks5://127.0.0.1:1080"
+    .\VirtualSSD.exe
+    ```
+    Set the variable in the same shell that launches VirtualSSD, or set it
+    permanently with `setx HTTPS_PROXY "http://proxy.example.com:8080"`.
+  - The same applies to Google Drive, with `HTTPS_PROXY` pointed at a proxy
+    that can reach `www.googleapis.com`.
+
+### 8. Creating a disk fails with a Telegram catalog or pin error
 - **Cause**: the adapter publishes the disk manifest and then updates a pinned
   catalog document, which is how another machine discovers the disks.
   Telegram only allows a bot to pin messages in a **channel**, or in a group

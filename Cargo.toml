@@ -42,7 +42,7 @@ bytes = "1.7"
 chrono = { version = "0.4", features = ["serde"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 zeroize = { version = "1.8", features = ["derive"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "socks"] }
 tempfile = "3.12"
 windows = { version = "0.58", features = [
     "Win32_Foundation",

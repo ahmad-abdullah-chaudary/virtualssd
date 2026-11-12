@@ -162,6 +162,16 @@ fn write_session_file(
     Ok(())
 }
 
+/// Describes a transport failure in terms the user can act on.
+///
+/// `reqwest`'s own message hides the cause, which for a blocked or filtered
+/// network is the single most useful thing to know.
+fn describe_transport_failure(context: &str, error: &reqwest::Error) -> ProviderError {
+    let failure = virtualssd_provider_contract::transport::classify(error);
+    let advice = virtualssd_provider_contract::transport::advice("www.googleapis.com", &failure);
+    ProviderError::Network(format!("{context}: {}. {advice}", failure.message()))
+}
+
 /// Maps a non-success Google Drive HTTP response to a typed provider error.
 /// Never fabricates a success value: every caller must surface this error.
 fn map_http_error(status: reqwest::StatusCode, body: String) -> ProviderError {
@@ -550,7 +560,7 @@ impl GoogleDriveProvider {
             .body(metadata.to_string())
             .send()
             .await
-            .map_err(|e| ProviderError::Network(format!("Failed to start upload session: {e}")))?;
+            .map_err(|e| describe_transport_failure("Failed to start upload session", &e))?;
 
         let init_status = init_res.status();
         if !init_status.is_success() {
@@ -610,7 +620,7 @@ impl GoogleDriveProvider {
             .body(data[start..].to_vec())
             .send()
             .await
-            .map_err(|e| ProviderError::Network(format!("Chunk upload failed: {e}")))?;
+            .map_err(|e| describe_transport_failure("Chunk upload failed", &e))?;
 
         let status = res.status();
         if status.as_u16() == 404 || status.as_u16() == 410 {
@@ -711,7 +721,7 @@ impl GoogleDriveProvider {
             .form(&params)
             .send()
             .await
-            .map_err(|e| ProviderError::Network(format!("Token refresh failed: {e}")))?;
+            .map_err(|e| describe_transport_failure("Token refresh failed", &e))?;
 
         if !res.status().is_success() {
             let err_text = res.text().await.unwrap_or_default();
@@ -753,7 +763,7 @@ impl CloudStorageProvider for GoogleDriveProvider {
             .header(AUTHORIZATION, format!("Bearer {token}"))
             .send()
             .await
-            .map_err(|e| ProviderError::Network(format!("Cannot reach Google Drive API: {e}")))?;
+            .map_err(|e| describe_transport_failure("Cannot reach Google Drive API", &e))?;
 
         let status = res.status();
         if !status.is_success() {
@@ -1062,7 +1072,7 @@ impl CloudStorageProvider for GoogleDriveProvider {
             .body(metadata.to_string())
             .send()
             .await
-            .map_err(|e| ProviderError::Network(format!("Failed to start manifest upload: {e}")))?;
+            .map_err(|e| describe_transport_failure("Failed to start manifest upload", &e))?;
 
         let init_status = init_res.status();
         if !init_status.is_success() {
@@ -1091,7 +1101,7 @@ impl CloudStorageProvider for GoogleDriveProvider {
             .body(serialized)
             .send()
             .await
-            .map_err(|e| ProviderError::Network(format!("Manifest upload failed: {e}")))?;
+            .map_err(|e| describe_transport_failure("Manifest upload failed", &e))?;
 
         let put_status = put_res.status();
         if !put_status.is_success() {

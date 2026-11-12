@@ -67,6 +67,15 @@ identifiable — for example `1.0.0+42`.
   assuming `./target`, which this workspace redirects to `C:\cargo-build`.
 
 ### Fixed
+- A provider connection failure now says what actually happened. The message
+  used to be `Network connection failure: ... error sending request for url`,
+  which hid the cause. It now distinguishes a blocked or filtered
+  destination, a DNS failure, a timeout, a refused connection and a TLS
+  failure, and tells the user what to do about each. A reset connection is
+  reported as *"The connection was closed or reset before any data was
+  exchanged"*, with the advice to use a different network, a VPN, or the
+  standard `HTTPS_PROXY`/`ALL_PROXY` environment variables. SOCKS5 proxies
+  are now supported.
 - Telegram `publish_manifest` returned success even when the pinned manifest
   catalog could not be updated, which left a fresh installation unable to
   discover the disk. It now returns an explicit error so the sync is retried.

@@ -9,6 +9,8 @@ use uuid::Uuid;
 use virtualssd_integrity::ChunkChecksum;
 use virtualssd_manifest::DiskManifest;
 
+pub mod transport;
+
 #[derive(Debug, Error)]
 pub enum ProviderError {
     #[error("Authentication error or token expired: {0}")]
