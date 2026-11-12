@@ -12,6 +12,13 @@ identifiable — for example `1.0.0+42`.
 ## [Unreleased]
 
 ### Added
+- **A Google Drive setup guide and a token helper.** `docs/google-drive-setup.md`
+  walks through creating a Google Cloud project, enabling the Drive API,
+  configuring the OAuth consent screen, and creating a Desktop app OAuth
+  client. `scripts/get-google-drive-token.ps1` then performs the PKCE consent
+  flow in the browser and prints the client id and refresh token to paste into
+  **Cloud Providers**. The script writes nothing to disk and stores no secret.
+  The Cloud Providers page now points at both.
 - **Volume Shadow Copy mirroring.** A mounted disk can now be mirrored
   without being unmounted. *Mirror While Mounted* takes a volume shadow copy
   of the volume that holds the VHDX, flushes the guest file system into the

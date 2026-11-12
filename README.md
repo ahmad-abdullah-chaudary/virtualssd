@@ -65,6 +65,7 @@ who need it.*
 - [Build from source](#build-from-source)
 - [Versioning and code signing](#versioning-and-code-signing)
 - [Troubleshooting](#troubleshooting)
+- [Google Drive setup](docs/google-drive-setup.md)
 - [Known limitations](#known-limitations)
 - [Contributing](#contributing)
 - [Roadmap](#roadmap)
@@ -275,8 +276,12 @@ Get-AuthenticodeSignature .\VirtualSSD-setup.exe | Format-List Status, SignerCer
 1. **Launch VirtualSSD.** It starts unelevated, so you can add a provider
    and read the diagnostics without administrator rights.
 2. **Open Cloud Providers** and add one:
-   - **Google Drive** — your OAuth 2.0 client id and refresh token.
-   - **Telegram** — your bot token and the numeric storage chat id.
+   - **Google Drive** — your OAuth 2.0 client id and refresh token. Follow
+     [the Google Drive setup guide](docs/google-drive-setup.md); the helper
+     script `scripts\get-google-drive-token.ps1` obtains both for you.
+   - **Telegram** — your bot token and the numeric storage chat id. Use a
+     **channel** where the bot is an administrator, so disks can be
+     discovered from another machine automatically.
 3. **Open Disks & Volumes → New Disk.** Name it, pick a capacity, choose the
    provider. The manifest is published immediately, so the disk is
    discoverable from another machine right away.
@@ -285,7 +290,9 @@ Get-AuthenticodeSignature .\VirtualSSD-setup.exe | Format-List Status, SignerCer
 5. **Mount.** VirtualSSD creates the VHDX, attaches it, initializes GPT,
    formats NTFS, and assigns a drive letter.
 6. **Fill it up**, then unmount and press **Mirror Snapshot**. Watch the live
-   engine log on the Diagnostics page to see the real chunk transfers.
+   engine log on the Diagnostics page to see the real chunk transfers. If the
+   volume is still mounted, use **Mirror While Mounted** instead: it takes a
+   volume shadow copy and mirrors that, so the volume stays usable.
 7. **Go to another machine**: install VirtualSSD, add the same provider,
    open **Cloud Providers → Import a Remote Disk Manifest**, and enter the
    disk UUID. The volume comes back on first mount.

@@ -272,9 +272,15 @@ export const ProvidersPage: React.FC<ProvidersPageProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-2">
-            <p className="text-[11px] text-zinc-400">
-              Credentials are encrypted with Windows DPAPI after verification. Scope requested: <code className="text-zinc-600 font-mono">drive.file</code>.
+          <div className="flex items-center justify-between pt-2 gap-4">
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Credentials are encrypted with Windows DPAPI after verification. Scope requested:{' '}
+              <code className="text-zinc-600 font-mono">drive.file</code>.
+              <br />
+              Run{' '}
+              <code className="text-zinc-600 font-mono">scripts\get-google-drive-token.ps1</code> to
+              obtain a client id and refresh token. The full guide is in{' '}
+              <code className="text-zinc-600 font-mono">docs\google-drive-setup.md</code>.
             </p>
             <button
               type="submit"
