@@ -1,0 +1,62 @@
+# ── Rust / Cargo ─────────────────────────────────────────────────────────────
+/target
+**/target/
+*.rlib
+*.rmeta
+
+# The workspace redirects Cargo's target directory outside the tree (see
+# .cargo/config.toml), but this keeps the rule correct if that ever changes.
+
+# ── Node / pnpm ──────────────────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# ── Frontend build output ────────────────────────────────────────────────────
+/apps/desktop/dist/
+/apps/desktop/src-tauri/dist/
+/apps/desktop/.vite/
+
+# ── Tauri generated files ────────────────────────────────────────────────────
+# `gen/` is produced by tauri-build from the config, capabilities and icons.
+/apps/desktop/src-tauri/gen/
+
+# ── Release artifacts ────────────────────────────────────────────────────────
+/dist/
+*.msi
+*.exe
+!apps/desktop/src-tauri/icons/*.exe
+
+# ── Local build state ────────────────────────────────────────────────────────
+# Per-build counter, used only when the build runs outside a git checkout.
+/apps/desktop/src-tauri/BUILD_NUMBER
+
+# ── Secrets and credentials ──────────────────────────────────────────────────
+# Provider credentials are DPAPI-encrypted at runtime under
+# %LOCALAPPDATA%\VirtualSSD and are never written into the repository.
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+*.env
+.env.*
+!/apps/desktop/src-tauri/icons/*.ico
+secrets.json
+credentials.json
+
+# ── Editor and OS noise ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+/.commandcode/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    VirtualSSD application icon.
+
+    Reproduces the brand mark shown in the application sidebar: four rounded
+    squares in a 2x2 grid. The top-left and bottom-right cells are the
+    signature lime (#d4f938); the other two are white. The mark sits on the
+    product's dark surface (#18191d) so it stays legible on both light and
+    dark taskbars, in the system tray, and in Windows Explorer's icon view.
+  -->
+  <defs>
+    <clipPath id="plate">
+      <rect x="0" y="0" width="1024" height="1024" rx="180" ry="180" />
+    </clipPath>
+  </defs>
+
+  <!-- Dark rounded plate -->
+  <g clip-path="url(#plate)">
+    <rect x="0" y="0" width="1024" height="1024" fill="#18191d" />
+  </g>
+
+  <!--
+    2x2 mark. Each cell is 300x300 with a 44px gutter, matching the sidebar's
+    28px box (two 12px cells separated by a 2px gap).
+  -->
+  <g>
+    <!-- top-left: lime -->
+    <rect x="210" y="210" width="300" height="300" rx="150" ry="150" fill="#d4f938" />
+    <!-- top-right: white -->
+    <rect x="514" y="210" width="300" height="300" rx="150" ry="150" fill="#ffffff" />
+    <!-- bottom-left: white -->
+    <rect x="210" y="514" width="300" height="300" rx="150" ry="150" fill="#ffffff" />
+    <!-- bottom-right: lime -->
+    <rect x="514" y="514" width="300" height="300" rx="150" ry="150" fill="#d4f938" />
+  </g>
+</svg>

@@ -1,0 +1,27 @@
+[package]
+name = "virtualssd-provider-gdrive"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+virtualssd-integrity = { path = "../integrity" }
+virtualssd-manifest = { path = "../manifest" }
+virtualssd-provider-contract = { path = "../provider-contract" }
+tokio.workspace = true
+async-trait.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+sha2 = "0.10"
+base64 = "0.21"
+getrandom = "0.2"
+zeroize = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tempfile.workspace = true

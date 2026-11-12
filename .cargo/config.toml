@@ -1,0 +1,18 @@
+# Cargo workspace configuration
+# Single-job build + external target-dir prevents Windows os error 32
+# (Windows Defender holds file locks on newly-written .o/.rmeta files).
+
+[build]
+# Limit to 1 parallel job — eliminates parallel file-lock races on Windows.
+jobs = 1
+# Move target dir outside the project tree so Windows Defender doesn't
+# scan freshly-written .rmeta/.o files mid-write (os error 32 fix).
+target-dir = "C:/cargo-build"
+
+[profile.release]
+# Standard release optimisations
+opt-level    = 3
+lto          = "thin"       # thin-LTO: good size/speed tradeoff, no parallel link collision
+codegen-units = 1           # Single codegen unit → no parallel .o file race
+strip        = "symbols"    # Strip debug symbols for a smaller binary
+panic        = "abort"      # Smaller binary, no unwinding tables

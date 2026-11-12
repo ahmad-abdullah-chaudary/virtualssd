@@ -1,0 +1,32 @@
+[package]
+name = "storage-service"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+virtualssd-integrity = { path = "../../crates/integrity" }
+virtualssd-block-map = { path = "../../crates/block-map" }
+virtualssd-manifest = { path = "../../crates/manifest" }
+virtualssd-journal = { path = "../../crates/journal" }
+virtualssd-cache-manager = { path = "../../crates/cache-manager" }
+virtualssd-provider-contract = { path = "../../crates/provider-contract" }
+virtualssd-provider-gdrive = { path = "../../crates/provider-gdrive" }
+virtualssd-provider-telegram = { path = "../../crates/provider-telegram" }
+virtualssd-security = { path = "../../crates/security" }
+virtualssd-storage-core = { path = "../../crates/storage-core" }
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+parking_lot.workspace = true
+chrono.workspace = true
+windows.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,25 @@
+[package]
+name = "virtualssd-provider-telegram"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+virtualssd-integrity = { path = "../integrity" }
+virtualssd-manifest = { path = "../manifest" }
+virtualssd-provider-contract = { path = "../provider-contract" }
+tokio.workspace = true
+async-trait.workspace = true
+reqwest = { workspace = true, features = ["multipart"] }
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+rusqlite.workspace = true
+zeroize = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tempfile.workspace = true

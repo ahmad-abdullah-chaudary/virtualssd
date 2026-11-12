@@ -1,0 +1,30 @@
+[package]
+name = "virtualssd-storage-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+virtualssd-integrity = { path = "../integrity" }
+virtualssd-block-map = { path = "../block-map" }
+virtualssd-manifest = { path = "../manifest" }
+virtualssd-journal = { path = "../journal" }
+virtualssd-cache-manager = { path = "../cache-manager" }
+virtualssd-provider-contract = { path = "../provider-contract" }
+virtualssd-security = { path = "../security" }
+tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+parking_lot.workspace = true
+windows.workspace = true
+aes-gcm.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+chrono.workspace = true

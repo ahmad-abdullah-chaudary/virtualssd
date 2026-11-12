@@ -1,0 +1,18 @@
+[package]
+name = "virtualssd-cache-manager"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+virtualssd-integrity = { path = "../integrity" }
+virtualssd-block-map = { path = "../block-map" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

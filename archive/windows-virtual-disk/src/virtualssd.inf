@@ -1,0 +1,51 @@
+;
+; VirtualSSD Windows Storport Miniport Driver INF
+; Copyright (c) 2026 VirtualSSD Project. All rights reserved.
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=SCSIAdapter
+ClassGUID={4D36E97B-E325-11CE-BFC1-08002BE10318}
+Provider=%ManufacturerName%
+CatalogFile=virtualssd.cat
+DriverVer=10/23/2026,1.0.0.0
+PnpLockDown=1
+
+[DestinationDirs]
+DefaultDestDir = 12 ; %SystemRoot%\System32\drivers
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+virtualssd.sys = 1,,
+
+[Manufacturer]
+%ManufacturerName%=Standard,NTamd64.10.0...16299
+
+[Standard.NTamd64.10.0...16299]
+%DeviceDesc%=VirtualSSD_Device, ROOT\VIRTUALSSD_BUS
+
+[VirtualSSD_Device.NTamd64]
+CopyFiles=Drivers_Dir
+
+[Drivers_Dir]
+virtualssd.sys
+
+[VirtualSSD_Device.NTamd64.Services]
+AddService = virtualssd, 0x00000002, VirtualSSD_Service_Inst
+
+[VirtualSSD_Service_Inst]
+DisplayName    = %ServiceDesc%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\virtualssd.sys
+LoadOrderGroup = SCSI Miniport
+
+[Strings]
+ManufacturerName="VirtualSSD Project"
+DiskName="VirtualSSD Installation Media"
+DeviceDesc="VirtualSSD Cloud-Backed Virtual Storage Adapter"
+ServiceDesc="VirtualSSD Storport Driver Service"

@@ -1,0 +1,232 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sidebar-width: 240px;
+    --header-height: 56px;
+    --radius: 10px;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #18191d;
+    color: #0f172a;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  /* ── Scrollbars ───────────────────────────────────────────────── */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+
+  /* ── Base Buttons ─────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 select-none;
+  }
+  .btn-sm { @apply btn text-xs px-3 py-1.5 rounded-lg h-8; }
+  .btn-md { @apply btn text-sm px-4 py-2 rounded-lg h-9; }
+  .btn-lg { @apply btn text-sm px-5 py-2.5 rounded-xl h-10; }
+
+  .btn-primary {
+    @apply bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 shadow-brand;
+  }
+  .btn-secondary {
+    @apply bg-white text-surface-700 border border-surface-200 hover:bg-surface-50 hover:border-surface-300 active:bg-surface-100 shadow-xs;
+  }
+  .btn-ghost {
+    @apply text-surface-600 hover:bg-surface-100 hover:text-surface-900 active:bg-surface-200;
+  }
+  .btn-danger {
+    @apply text-danger-600 hover:bg-danger-50 hover:text-danger-700 active:bg-danger-100;
+  }
+  .btn-success-outline {
+    @apply text-success-700 bg-success-50 border border-success-200 hover:bg-success-100;
+  }
+
+  /* ── Cards ────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-white rounded-2xl border border-surface-200/80 shadow-card overflow-hidden;
+  }
+  .card-hover {
+    @apply card transition-all duration-200 hover:shadow-card-hover hover:border-surface-300;
+  }
+
+  /* ── Stat Cards ───────────────────────────────────────────────── */
+  .stat-card {
+    @apply card p-5 space-y-3;
+  }
+
+  /* ── Badge ────────────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-semibold;
+  }
+  .badge-green  { @apply badge bg-success-100 text-success-700 border border-success-200; }
+  .badge-blue   { @apply badge bg-brand-100 text-brand-700 border border-brand-200; }
+  .badge-amber  { @apply badge bg-warning-100 text-warning-700 border border-warning-100; }
+  .badge-red    { @apply badge bg-danger-100 text-danger-700 border border-danger-100; }
+  .badge-gray   { @apply badge bg-surface-100 text-surface-600 border border-surface-200; }
+  .badge-violet { @apply badge bg-violet-100 text-violet-700 border border-violet-100; }
+
+  /* ── Form Controls ────────────────────────────────────────────── */
+  .input {
+    @apply w-full text-sm bg-white border border-surface-200 rounded-lg px-3 py-2 text-surface-900 placeholder-surface-400
+           focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400
+           transition-all duration-150 shadow-xs;
+  }
+  .select {
+    @apply input appearance-none cursor-pointer pr-8;
+  }
+
+  /* ── Table ────────────────────────────────────────────────────── */
+  .data-table {
+    @apply w-full text-left text-xs;
+  }
+  .data-table th {
+    @apply px-5 py-3 font-semibold text-surface-500 bg-surface-50/80 border-b border-surface-200 whitespace-nowrap text-2xs uppercase tracking-wider;
+  }
+  .data-table td {
+    @apply px-5 py-3.5 border-b border-surface-100;
+  }
+  .data-table tbody tr {
+    @apply hover:bg-surface-50/60 transition-colors duration-100 cursor-default;
+  }
+
+  /* ── Sidebar Navigation Items ─────────────────────────────────── */
+  .nav-item {
+    @apply w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-100 cursor-pointer;
+  }
+  .nav-item-active {
+    @apply nav-item bg-brand-600 text-white shadow-brand;
+  }
+  .nav-item-inactive {
+    @apply nav-item text-surface-600 hover:bg-surface-100 hover:text-surface-900;
+  }
+
+  /* ── Progress Bar ─────────────────────────────────────────────── */
+  .progress-track {
+    @apply w-full bg-surface-200 rounded-full overflow-hidden;
+  }
+  .progress-bar {
+    @apply h-full rounded-full transition-all duration-500 ease-out;
+  }
+
+  /* ── Section Header ───────────────────────────────────────────── */
+  .section-header {
+    @apply flex items-center justify-between mb-5;
+  }
+  .section-title {
+    @apply text-xl font-bold text-surface-900 tracking-tight;
+  }
+  .section-subtitle {
+    @apply text-xs text-surface-500 mt-0.5 font-normal;
+  }
+
+  /* ── Card Headers ─────────────────────────────────────────────── */
+  .card-title {
+    @apply text-sm font-bold text-surface-900 tracking-tight;
+  }
+  .card-subtitle {
+    @apply text-xs text-surface-500 mt-0.5 font-normal;
+  }
+
+  /* ── Status Dot ───────────────────────────────────────────────── */
+  .dot-online  { @apply w-2 h-2 rounded-full bg-success-500; }
+  .dot-offline { @apply w-2 h-2 rounded-full bg-surface-400; }
+  .dot-warning { @apply w-2 h-2 rounded-full bg-warning-500; }
+
+  /* ── Metric Row ───────────────────────────────────────────────── */
+  .metric-row {
+    @apply flex items-center justify-between text-xs py-2.5 border-b border-surface-100 last:border-0;
+  }
+
+  /* ── Page Container ───────────────────────────────────────────── */
+  .page-container {
+    @apply space-y-6 animate-fade-in;
+  }
+}
+
+@layer utilities {
+  .font-tabular { font-variant-numeric: tabular-nums; }
+  .text-balance { text-wrap: balance; }
+  .scrollbar-none { scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-brand-600 to-violet-600 bg-clip-text text-transparent;
+  }
+
+  /* Shine effect for active card */
+  .shine {
+    position: relative;
+    overflow: hidden;
+  }
+  .shine::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(
+      to bottom right,
+      rgba(255,255,255,0) 40%,
+      rgba(255,255,255,0.08) 50%,
+      rgba(255,255,255,0) 60%
+    );
+    transform: rotate(30deg);
+    pointer-events: none;
+  }
+
+  /* Pinstripe diagonal hatched pattern for chart capsules */
+  .pinstripe-bar {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      #1f2127,
+      #1f2127 3px,
+      #2b2e37 3px,
+      #2b2e37 6px
+    );
+  }
+
+  .pinstripe-bar-accent {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      #252922,
+      #252922 3px,
+      #343b2f 3px,
+      #343b2f 6px
+    );
+  }
+}
