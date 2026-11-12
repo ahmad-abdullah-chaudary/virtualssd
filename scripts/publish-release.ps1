@@ -95,12 +95,14 @@ if ($present.Count -eq 0) { throw "No release assets were found in $distDir." }
 # ── Tag ───────────────────────────────────────────────────────────────────────
 Push-Location $repoRoot
 if (-not $Commit) { $Commit = (git rev-parse HEAD).Trim() }
+# Resolve the commit to its full object id, so a short hash compares correctly.
+$Commit = (git rev-parse "$Commit^{commit}").Trim()
 $existingTag = git tag --list $tag
 if (-not $existingTag) {
     git tag -a $tag $Commit -m "VirtualSSD $Version"
     Write-Host "Created tag $tag at $Commit" -ForegroundColor Green
 }
-$taggedCommit = git rev-list -n 1 $tag
+$taggedCommit = (git rev-list -n 1 $tag).Trim()
 if ($taggedCommit -ne $Commit) {
     Pop-Location
     throw "Tag $tag points at $taggedCommit but the artifacts were built from $Commit."
