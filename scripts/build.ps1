@@ -199,6 +199,34 @@ if ($cert) {
     $signedAll = $false
 }
 
+# Copies an artifact into ./dist.
+#
+# The destination may be running: a copy fails outright when the file is
+# locked. Writing to a temporary name and then replacing the target works
+# because Windows opens a running executable with a delete share.
+function Install-Artifact {
+    param([string]$Source, [string]$Destination)
+
+    if (-not (Test-Path $Source)) { return $false }
+
+    $staging = "$Destination.new"
+    Remove-Item $staging -Force -ErrorAction SilentlyContinue
+    Copy-Item $Source $staging -Force
+
+    try {
+        Remove-Item $Destination -Force -ErrorAction SilentlyContinue
+        Move-Item $staging $Destination -Force
+    } catch {
+        # The destination is still held by a running process. Fall back to a
+        # plain copy and report it, so the build does not silently produce a
+        # stale artifact.
+        Remove-Item $staging -Force -ErrorAction SilentlyContinue
+        Copy-Item $Source $Destination -Force
+        Write-Host "    (the previous $Destination was in use and could not be replaced cleanly)" -ForegroundColor Yellow
+    }
+    return $true
+}
+
 # ── 7. Assemble the release artifacts ─────────────────────────────────────────
 Write-Step "Assembling release artifacts in ./dist"
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
@@ -212,11 +240,11 @@ New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 $webviewLoader = Join-Path $targetDir "release\WebView2Loader.dll"
 
 if (Test-Path $exe) {
-    Copy-Item $exe (Join-Path $distDir "VirtualSSD.exe") -Force
+    Install-Artifact -Source $exe -Destination (Join-Path $distDir "VirtualSSD.exe") | Out-Null
     Write-Host "    dist\VirtualSSD.exe"
 
     if (Test-Path $webviewLoader) {
-        Copy-Item $webviewLoader (Join-Path $distDir "WebView2Loader.dll") -Force
+        Install-Artifact -Source $webviewLoader -Destination (Join-Path $distDir "WebView2Loader.dll") | Out-Null
         Write-Host "    dist\WebView2Loader.dll"
     } else {
         Write-Host "    WebView2Loader.dll was not found at $webviewLoader" -ForegroundColor Red
@@ -224,11 +252,11 @@ if (Test-Path $exe) {
     }
 }
 if ($nsis) {
-    Copy-Item $nsis (Join-Path $distDir "VirtualSSD-setup.exe") -Force
+    Install-Artifact -Source $nsis -Destination (Join-Path $distDir "VirtualSSD-setup.exe") | Out-Null
     Write-Host "    dist\VirtualSSD-setup.exe"
 }
 if ($msi) {
-    Copy-Item $msi (Join-Path $distDir "VirtualSSD.msi") -Force
+    Install-Artifact -Source $msi -Destination (Join-Path $distDir "VirtualSSD.msi") | Out-Null
     Write-Host "    dist\VirtualSSD.msi"
 }
 
