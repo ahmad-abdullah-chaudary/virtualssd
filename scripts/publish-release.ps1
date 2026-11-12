@@ -10,13 +10,6 @@
 # `git push` gets it from, so it is never written to disk or to the shell
 # history.
 
-$ErrorActionPreference = "Stop"
-
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$distDir = Join-Path $repoRoot "dist"
-$repo = "ahmad-abdullah-chaudary/virtualssd"
-$api = "https://api.github.com"
-
 param(
     [string]$Version,
     # The commit the artifacts were built from. It defaults to HEAD, but a
@@ -25,6 +18,13 @@ param(
     # after a build.
     [string]$Commit
 )
+
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$distDir = Join-Path $repoRoot "dist"
+$repo = "ahmad-abdullah-chaudary/virtualssd"
+$api = "https://api.github.com"
 
 function Get-GitHubToken {
     $filled = "protocol=https`nhost=github.com`n`n" | git credential fill 2>$null
@@ -121,12 +121,20 @@ if (Test-Path $changelogPath) {
 
 # ── Create or update the release ──────────────────────────────────────────────
 $bodyFile = Join-Path $env:TEMP ("virtualssd-release-" + [guid]::NewGuid().ToString("N") + ".md")
-$notes | Set-Content -Path $bodyFile -Encoding utf8
+# Write UTF-8 without a byte-order mark: GitHub's JSON parser rejects the BOM.
+[System.IO.File]::WriteAllText($bodyFile, $notes, (New-Object System.Text.UTF8Encoding($false)))
 
-$existingRelease = Invoke-RestMethod -Uri "$api/repos/$repo/releases/tags/$tag" -Headers $headers -ErrorAction SilentlyContinue
+$existingRelease = $null
+try {
+    $existingRelease = Invoke-RestMethod -Uri "$api/repos/$repo/releases/tags/$tag" -Headers $headers -ErrorAction Stop
+} catch {
+    # A release for this tag does not exist yet, which is the normal case.
+    $existingRelease = $null
+}
 if ($existingRelease) {
     Write-Host "Release $tag already exists; uploading assets to it." -ForegroundColor Yellow
     $releaseId = $existingRelease.id
+    $release = $existingRelease
 } else {
     $payload = @{
         tag_name         = $tag
@@ -135,14 +143,35 @@ if ($existingRelease) {
         draft            = $false
         prerelease       = $false
     } | ConvertTo-Json -Depth 5
-    $release = Invoke-RestMethod -Uri "$api/repos/$repo/releases" -Method Post -Headers $headers -Body $payload -ContentType "application/json"
+
+    # Send the JSON from a file encoded as UTF-8 without a byte-order mark.
+    # Windows PowerShell mangles a string body that contains non-ASCII
+    # characters, which makes GitHub reject the payload as malformed JSON.
+    $payloadFile = Join-Path $env:TEMP ("virtualssd-release-payload-" + [guid]::NewGuid().ToString("N") + ".json")
+    [System.IO.File]::WriteAllText($payloadFile, $payload, (New-Object System.Text.UTF8Encoding($false)))
+    try {
+        $release = Invoke-RestMethod -Uri "$api/repos/$repo/releases" -Method Post -Headers $headers -InFile $payloadFile -ContentType "application/json; charset=utf-8"
+    } finally {
+        Remove-Item $payloadFile -ErrorAction SilentlyContinue
+    }
     $releaseId = $release.id
     Write-Host "Created release $tag" -ForegroundColor Green
 }
 
 # ── Upload assets ─────────────────────────────────────────────────────────────
+# The upload URL comes from the release itself. GitHub returns a template
+# like ".../assets{?name,label}" that must be expanded per asset.
+$uploadTemplate = $release.upload_url
+if (-not $uploadTemplate) {
+    throw "The release did not return an upload_url."
+}
+
 foreach ($asset in $present) {
-    $uploadUrl = "$api/repos/$repo/releases/$releaseId/assets?name=$([uri]::EscapeDataString($asset.Name))"
+    $label = [uri]::EscapeDataString($asset.Label)
+    $name = [uri]::EscapeDataString($asset.Name)
+    $uploadUrl = $uploadTemplate.Replace('{?name,label}', "?name=$name&label=$label")
+    $uploadUrl = $uploadUrl.Replace('{name,label}', "?name=$name&label=$label")
+
     $bytes = [System.IO.File]::ReadAllBytes($asset.Path)
     Write-Host "  uploading $($asset.Name) ($([math]::Round($bytes.Length/1MB,2)) MB)..." -ForegroundColor Cyan
     Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $headers -Body $bytes -ContentType "application/octet-stream" | Out-Null
