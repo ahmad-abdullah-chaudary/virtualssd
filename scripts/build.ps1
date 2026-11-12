@@ -203,9 +203,25 @@ if ($cert) {
 Write-Step "Assembling release artifacts in ./dist"
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 
+# The application links the WebView2 loader dynamically, so Windows looks for
+# `WebView2Loader.dll` next to the executable. The installers ship it, but a
+# bare copy of the executable does not, and Windows then reports
+# "The code execution cannot proceed because WebView2Loader.dll was not
+# found". The DLL is copied next to the portable executable and into the
+# portable archive for exactly that reason.
+$webviewLoader = Join-Path $targetDir "release\WebView2Loader.dll"
+
 if (Test-Path $exe) {
     Copy-Item $exe (Join-Path $distDir "VirtualSSD.exe") -Force
     Write-Host "    dist\VirtualSSD.exe"
+
+    if (Test-Path $webviewLoader) {
+        Copy-Item $webviewLoader (Join-Path $distDir "WebView2Loader.dll") -Force
+        Write-Host "    dist\WebView2Loader.dll"
+    } else {
+        Write-Host "    WebView2Loader.dll was not found at $webviewLoader" -ForegroundColor Red
+        throw "The WebView2 loader is missing. The portable executable would not start without it."
+    }
 }
 if ($nsis) {
     Copy-Item $nsis (Join-Path $distDir "VirtualSSD-setup.exe") -Force
@@ -215,6 +231,34 @@ if ($msi) {
     Copy-Item $msi (Join-Path $distDir "VirtualSSD.msi") -Force
     Write-Host "    dist\VirtualSSD.msi"
 }
+
+# A portable archive that contains everything the application needs, so it can
+# be unpacked and run without installing anything.
+$portableStage = Join-Path $env:TEMP ("virtualssd-portable-" + [guid]::NewGuid().ToString("N"))
+try {
+    New-Item -ItemType Directory -Force -Path $portableStage | Out-Null
+    Copy-Item (Join-Path $distDir "VirtualSSD.exe") $portableStage -Force
+    Copy-Item (Join-Path $distDir "WebView2Loader.dll") $portableStage -Force
+    $portableZip = Join-Path $distDir "VirtualSSD-portable.zip"
+    Remove-Item $portableZip -ErrorAction SilentlyContinue
+    Compress-Archive -Path (Join-Path $portableStage "*") -DestinationPath $portableZip -CompressionLevel Optimal
+    Write-Host "    dist\VirtualSSD-portable.zip"
+} finally {
+    Remove-Item $portableStage -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Verify that the portable copy can actually resolve its loader. Without this
+# the executable fails at startup with a confusing "not found" error.
+if (Test-Path (Join-Path $distDir "VirtualSSD.exe")) {
+    $portableExe = Join-Path $distDir "VirtualSSD.exe"
+    $bytes = [System.IO.File]::ReadAllBytes($portableExe)
+    $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+    if ($text -match 'WebView2Loader\.dll' -and -not (Test-Path (Join-Path $distDir "WebView2Loader.dll"))) {
+        throw "The portable executable needs WebView2Loader.dll next to it, but it is missing."
+    }
+    Write-Host "    Verified: the portable executable resolves WebView2Loader.dll." -ForegroundColor Green
+}
+
 $versionFile = Join-Path $distDir "VERSION.txt"
 @(
     "VirtualSSD $version",

@@ -248,7 +248,15 @@ Grab the latest release:
 |---|---|
 | [`VirtualSSD-setup.exe`](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases/latest) | You want the installer. It registers the Start Menu shortcut and the uninstaller. |
 | [`VirtualSSD.msi`](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases/latest) | You are deploying to managed or enterprise machines. |
-| `VirtualSSD.exe` | You want a portable copy with no installation. |
+| [`VirtualSSD-portable.zip`](https://github.com/ahmad-abdullah-chaudary/virtualssd/releases/latest) | You want a portable copy with no installation. Unpack it and run `VirtualSSD.exe`. |
+| `VirtualSSD.exe` | The bare executable. It **needs `WebView2Loader.dll` next to it** — use the portable zip instead of downloading this on its own. |
+
+> **"WebView2Loader.dll was not found"** — the application links the WebView2
+> loader dynamically, so Windows looks for that DLL next to the executable. The
+> installers include it automatically. If you copied `VirtualSSD.exe` on its
+> own, copy `WebView2Loader.dll` into the same folder, or use
+> `VirtualSSD-portable.zip`. The DLL is also in this repository's `dist`
+> folder next to the portable executable.
 
 Check the signature before you run it:
 

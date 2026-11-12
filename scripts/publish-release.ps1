@@ -64,7 +64,8 @@ Write-Host "Publishing $repo release $tag" -ForegroundColor Cyan
 $assets = @(
     @{ Path = (Join-Path $distDir "VirtualSSD-setup.exe"); Name = "VirtualSSD-setup.exe"; Label = "NSIS installer (signed)" },
     @{ Path = (Join-Path $distDir "VirtualSSD.msi");       Name = "VirtualSSD.msi";       Label = "MSI installer (signed)" },
-    @{ Path = (Join-Path $distDir "VirtualSSD.exe");       Name = "VirtualSSD.exe";       Label = "Standalone executable (signed)" }
+    @{ Path = (Join-Path $distDir "VirtualSSD.exe");       Name = "VirtualSSD.exe";       Label = "Standalone executable (signed) - also needs WebView2Loader.dll" },
+    @{ Path = (Join-Path $distDir "VirtualSSD-portable.zip"); Name = "VirtualSSD-portable.zip"; Label = "Portable bundle - executable and WebView2Loader.dll (signed)" }
 )
 
 $present = @()
