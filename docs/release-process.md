@@ -142,6 +142,20 @@ strings, the installer filename, the sidebar footer, and the release tag.
 `CompanyName` is `Chaudary Global` and `LegalCopyright` is
 `Copyright (c) 2026 Ahmad Abdullah Chaudary, Chaudary Global`.
 
+### Publishing a GitHub release
+
+```powershell
+# Tag the current commit and upload the signed artifacts from ./dist
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1
+```
+
+The script reads the GitHub token from the git credential manager — the same
+place `git push` gets it from — so no token is written to disk or to the shell
+history. Set `VIRTUALSSD_GITHUB_TOKEN` to override it.
+
+The release notes come from `docs/release-notes-template.md`, with the
+`[Unreleased]` section of `CHANGELOG.md` inserted automatically.
+
 ### Icon and tray checks
 
 - `apps/desktop/app-icon.svg` is the single source of truth for the application
